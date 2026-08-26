@@ -45,7 +45,7 @@ public class BlackjackService(
             return BlackjackResponse.Failed($"Unknown currency '{request.Wallet}'.");
         }
 
-        RefundAbandonedStake(sessionId, output);
+        var refund = RefundAbandonedStake(sessionId, output);
 
         var session = tables.For(sessionId);
 
@@ -80,7 +80,7 @@ public class BlackjackService(
         Settle(session, view, sessionId, output);
         await profiles.SaveAsync(sessionId);
 
-        return Success(view, sessionId, session);
+        return Success(view, sessionId, session) with { Note = refund };
     }
 
     public Task<BlackjackResponse> ActAsync(ActionRequest request, MongoId sessionId) =>
@@ -188,10 +188,10 @@ public class BlackjackService(
             return BlackjackResponse.Failed("No PMC profile for this session.");
         }
 
-        RefundAbandonedStake(sessionId, new ItemEventRouterResponse());
+        var refund = RefundAbandonedStake(sessionId, new ItemEventRouterResponse());
 
         var session = tables.For(sessionId);
-        return Success(session.Table.View(), sessionId, session);
+        return Success(session.Table.View(), sessionId, session) with { Note = refund };
     }
 
     /// <summary>
@@ -202,26 +202,30 @@ public class BlackjackService(
     /// lazily, on next contact, avoids having to touch profiles at boot before the
     /// server has finished loading them.
     /// </summary>
-    private void RefundAbandonedStake(MongoId sessionId, ItemEventRouterResponse output)
+    private string? RefundAbandonedStake(MongoId sessionId, ItemEventRouterResponse output)
     {
         var owed = escrow.Get(sessionId);
         if (owed is null)
         {
-            return;
+            return null;
         }
 
         // A live round still owns its stake -- only an orphaned one is refundable.
         if (tables.Has(sessionId) && tables.For(sessionId).Table.Phase == RoundPhase.PlayerTurn)
         {
-            return;
+            return null;
         }
 
-        if (Enum.TryParse<Wallet>(owed.Wallet, ignoreCase: true, out var wallet))
+        if (!Enum.TryParse<Wallet>(owed.Wallet, ignoreCase: true, out var wallet))
         {
-            bank.Credit(sessionId, wallet, owed.Amount, output);
+            escrow.Release(sessionId);
+            return $"Discarded an unreadable outstanding stake of {owed.Amount} '{owed.Wallet}'.";
         }
 
+        bank.Credit(sessionId, wallet, owed.Amount, output);
         escrow.Release(sessionId);
+
+        return $"Refunded {owed.Amount:N0} {wallet} from a round that never finished.";
     }
 
     private void Settle(PlayerSession session, RoundView view, MongoId sessionId, ItemEventRouterResponse output)

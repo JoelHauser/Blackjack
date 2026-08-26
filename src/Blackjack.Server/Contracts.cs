@@ -63,6 +63,16 @@ public record BlackjackResponse
     public string? Warning { get; init; }
 
     /// <summary>
+    /// Something worth recording that is not a fault, currently only a refunded
+    /// stake. Without it a recovered stake reaches the log as an unexplained credit,
+    /// which looks identical to a payout bug.
+    ///
+    /// The service carries no logger of its own -- that is what keeps it testable
+    /// without a server -- so it reports here and the transport writes the line.
+    /// </summary>
+    public string? Note { get; init; }
+
+    /// <summary>
     /// Balance in the wallet the round is denominated in, after settlement.
     ///
     /// Sent explicitly because a custom static route does not flow through the

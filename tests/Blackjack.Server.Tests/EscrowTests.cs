@@ -82,6 +82,11 @@ public class EscrowTests
         Assert.Equal([(Wallet.Roubles, Wager)], _bank.Credits);
         Assert.Null(_escrow.Get(_session));
         Assert.Equal(1_000_000, _bank.GetBalance(_session, Wallet.Roubles));
+
+        // The refund has to explain itself, or the log shows a credit with no cause
+        // and it reads as a payout bug.
+        Assert.NotNull(response.Note);
+        Assert.Contains("never finished", response.Note);
     }
 
     [Fact]

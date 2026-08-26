@@ -55,6 +55,11 @@ public class BlackjackItemEventCallbacks(BlackjackService service, BlackjackLog 
             log.Error(result.Warning);
         }
 
+        if (result.Note is not null)
+        {
+            log.Info(result.Note);
+        }
+
         if (!result.Ok)
         {
             log.Detail($"<- refused: {result.Error}");

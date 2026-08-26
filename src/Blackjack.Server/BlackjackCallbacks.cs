@@ -71,6 +71,13 @@ public class BlackjackCallbacks(
             log.Error(response.Warning);
         }
 
+        // Always written, not gated on verbose: a stake reappearing needs a reason
+        // beside it or it reads as a payout bug.
+        if (response.Note is not null)
+        {
+            log.Info(response.Note);
+        }
+
         if (!response.Ok)
         {
             log.Detail($"<- refused: {response.Error}");
