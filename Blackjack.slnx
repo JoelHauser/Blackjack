@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Blackjack.Game/Blackjack.Game.csproj" />
+    <Project Path="src/Blackjack.Server/Blackjack.Server.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Blackjack.Game.Tests/Blackjack.Game.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Blackjack.Console/Blackjack.Console.csproj" />
+  </Folder>
+</Solution>
