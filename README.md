@@ -260,11 +260,28 @@ Run them with `dotnet test`.
 
 All three return `{ ok, error, round, balance, wallet }`.
 
-**Known limitation:** custom static routes do not flow through the ItemEventRouter,
-so the client's own inventory model is stale until it refreshes. That is why every
-response carries `balance` -- the UI must trust that number over anything it
-computes locally. Moving the actions onto an ItemEventRouter action would fix it
-properly and is the right call if the staleness turns out to be visible.
+### Two transports, one game
+
+The game client uses **item-event actions**, not the static routes above:
+
+| Action | Body |
+| --- | --- |
+| `BlackjackDeal` | `{ Wallet, Wager }` |
+| `BlackjackPlay` | `{ Move }` |
+
+These arrive on the endpoint EFT already uses for moving items, so the reply carries
+the `ProfileChanges` the client applies to its own inventory copy. Without that, money
+lands in the profile but the stash view stays stale until the game reloads -- which
+reads to a player exactly like the mod ate their winnings.
+
+An item-event reply carries `ProfileChanges` and nothing else, so the round rides
+along in the response's extension data under `blackjack` rather than costing a second
+request.
+
+The static routes stay because they are how the mod is tested with curl and no game
+attached. They pass a throwaway change record, since nothing is listening for it --
+so a curl session shows correct balances in the response and a stale stash in game.
+Both transports call the same `BlackjackService`.
 
 ## Build and verify
 

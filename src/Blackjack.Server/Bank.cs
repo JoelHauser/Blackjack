@@ -64,7 +64,7 @@ public class Bank(
     /// Takes the stake. Returns false without touching anything if the player is
     /// short -- the caller must not deal a hand it cannot collect on.
     /// </summary>
-    public bool TryDebit(MongoId sessionId, Wallet wallet, int amount)
+    public bool TryDebit(MongoId sessionId, Wallet wallet, int amount, ItemEventRouterResponse output)
     {
         var pmcData = profileHelper.GetPmcProfile(sessionId);
         if (pmcData is null)
@@ -86,7 +86,6 @@ public class Bank(
             return false;
         }
 
-        var output = new ItemEventRouterResponse();
         var remaining = amount;
 
         // Smallest stacks first, so the stash ends up with fewer loose piles rather
@@ -135,7 +134,7 @@ public class Bank(
     }
 
     /// <summary>Pays winnings back into the stash, respecting max stack size.</summary>
-    public void Credit(MongoId sessionId, Wallet wallet, int amount)
+    public void Credit(MongoId sessionId, Wallet wallet, int amount, ItemEventRouterResponse output)
     {
         var pmcData = profileHelper.GetPmcProfile(sessionId);
         if (pmcData is null)
@@ -155,7 +154,6 @@ public class Bank(
         // Roubles cap at 500,000 per stack. One oversized stack would be rejected
         // by the client, so the payout is split before it is handed over.
         var maxStack = itemHelper.GetItem(tpl).Value?.Properties?.StackMaxSize ?? amount;
-        var output = new ItemEventRouterResponse();
         var remaining = amount;
         var stacksMade = 0;
 

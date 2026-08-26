@@ -1,4 +1,5 @@
 using SPTarkov.Server.Core.Models.Common;
+using SPTarkov.Server.Core.Models.Eft.ItemEvent;
 
 namespace Blackjack.Server;
 
@@ -18,10 +19,16 @@ public interface IBank
 {
     int GetBalance(MongoId sessionId, Wallet wallet);
 
-    /// <summary>Takes money. False means nothing was touched.</summary>
-    bool TryDebit(MongoId sessionId, Wallet wallet, int amount);
+    /// <summary>
+    /// Takes money. False means nothing was touched.
+    ///
+    /// <paramref name="output"/> collects what changed. Handed back to the client, it
+    /// is what keeps the stash view in step; discarded, the money moves on the server
+    /// and the client's own copy never hears about it.
+    /// </summary>
+    bool TryDebit(MongoId sessionId, Wallet wallet, int amount, ItemEventRouterResponse output);
 
-    void Credit(MongoId sessionId, Wallet wallet, int amount);
+    void Credit(MongoId sessionId, Wallet wallet, int amount, ItemEventRouterResponse output);
 }
 
 public interface IProfileGateway

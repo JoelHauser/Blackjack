@@ -1,6 +1,7 @@
 using Blackjack.Game;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.Models.Common;
+using SPTarkov.Server.Core.Models.Eft.ItemEvent;
 
 namespace Blackjack.Server;
 
@@ -20,7 +21,19 @@ public class BlackjackService(
     IStatsStore stats,
     IEscrowStore escrow)
 {
-    public async Task<BlackjackResponse> DealAsync(DealRequest request, MongoId sessionId)
+    public Task<BlackjackResponse> DealAsync(DealRequest request, MongoId sessionId) =>
+        DealAsync(request, sessionId, new ItemEventRouterResponse());
+
+    /// <summary>
+    /// <paramref name="output"/> accumulates the inventory changes. The item-event
+    /// transport returns it to the client so the stash updates itself; the static
+    /// route passes a throwaway, which is why curl testing shows correct balances but
+    /// a stale stash in game.
+    /// </summary>
+    public async Task<BlackjackResponse> DealAsync(
+        DealRequest request,
+        MongoId sessionId,
+        ItemEventRouterResponse output)
     {
         if (!profiles.HasProfile(sessionId))
         {
@@ -32,7 +45,7 @@ public class BlackjackService(
             return BlackjackResponse.Failed($"Unknown currency '{request.Wallet}'.");
         }
 
-        RefundAbandonedStake(sessionId);
+        RefundAbandonedStake(sessionId, output);
 
         var session = tables.For(sessionId);
 
@@ -50,7 +63,7 @@ public class BlackjackService(
                 $"{limits.Label} bets run from {limits.MinBet:N0} to {limits.MaxBet:N0}.");
         }
 
-        if (!bank.TryDebit(sessionId, wallet, request.Wager))
+        if (!bank.TryDebit(sessionId, wallet, request.Wager, output))
         {
             return BlackjackResponse.Failed(
                 $"Not enough {wallet} -- you have {bank.GetBalance(sessionId, wallet)}.");
@@ -64,13 +77,19 @@ public class BlackjackService(
         var view = session.Table.Deal(request.Wager, limits.BlackjackPayout);
         session.Staked = view.TotalWagered;
 
-        Settle(session, view, sessionId);
+        Settle(session, view, sessionId, output);
         await profiles.SaveAsync(sessionId);
 
         return Success(view, sessionId, session);
     }
 
-    public async Task<BlackjackResponse> ActAsync(ActionRequest request, MongoId sessionId)
+    public Task<BlackjackResponse> ActAsync(ActionRequest request, MongoId sessionId) =>
+        ActAsync(request, sessionId, new ItemEventRouterResponse());
+
+    public async Task<BlackjackResponse> ActAsync(
+        ActionRequest request,
+        MongoId sessionId,
+        ItemEventRouterResponse output)
     {
         if (!profiles.HasProfile(sessionId))
         {
@@ -123,7 +142,7 @@ public class BlackjackService(
 
         string? warning = null;
         var owed = view.TotalWagered - session.Staked;
-        if (owed > 0 && bank.TryDebit(sessionId, session.Wallet, owed))
+        if (owed > 0 && bank.TryDebit(sessionId, session.Wallet, owed, output))
         {
             escrow.Hold(sessionId, session.Wallet, owed);
         }
@@ -137,7 +156,7 @@ public class BlackjackService(
 
         session.Staked = view.TotalWagered;
 
-        Settle(session, view, sessionId);
+        Settle(session, view, sessionId, output);
         await profiles.SaveAsync(sessionId);
 
         return Success(view, sessionId, session) with { Warning = warning };
@@ -169,7 +188,7 @@ public class BlackjackService(
             return BlackjackResponse.Failed("No PMC profile for this session.");
         }
 
-        RefundAbandonedStake(sessionId);
+        RefundAbandonedStake(sessionId, new ItemEventRouterResponse());
 
         var session = tables.For(sessionId);
         return Success(session.Table.View(), sessionId, session);
@@ -183,7 +202,7 @@ public class BlackjackService(
     /// lazily, on next contact, avoids having to touch profiles at boot before the
     /// server has finished loading them.
     /// </summary>
-    private void RefundAbandonedStake(MongoId sessionId)
+    private void RefundAbandonedStake(MongoId sessionId, ItemEventRouterResponse output)
     {
         var owed = escrow.Get(sessionId);
         if (owed is null)
@@ -199,13 +218,13 @@ public class BlackjackService(
 
         if (Enum.TryParse<Wallet>(owed.Wallet, ignoreCase: true, out var wallet))
         {
-            bank.Credit(sessionId, wallet, owed.Amount);
+            bank.Credit(sessionId, wallet, owed.Amount, output);
         }
 
         escrow.Release(sessionId);
     }
 
-    private void Settle(PlayerSession session, RoundView view, MongoId sessionId)
+    private void Settle(PlayerSession session, RoundView view, MongoId sessionId, ItemEventRouterResponse output)
     {
         if (view.Phase != RoundPhase.Settled)
         {
@@ -214,7 +233,7 @@ public class BlackjackService(
 
         if (view.TotalReturned > 0)
         {
-            bank.Credit(sessionId, session.Wallet, view.TotalReturned);
+            bank.Credit(sessionId, session.Wallet, view.TotalReturned, output);
         }
 
         var record = stats.Get(sessionId);

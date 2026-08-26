@@ -23,6 +23,7 @@ public class Startup(BlackjackLog log, StatsStore stats) : IOnLoad
         log.Info($"mod folder: {log.ModFolder}");
         log.Info($"stats file: {stats.FilePath} ({(stats.Writable ? "writable" : "NOT WRITABLE")})");
         log.Info("routes: POST /blackjack/ping, /deal, /action, /state, /stats");
+        log.Info($"item events: {BlackjackActions.Deal}, {BlackjackActions.Play}");
         log.Info(
             $"table: {rules.DeckCount} decks, dealer {(rules.DealerHitsSoft17 ? "hits" : "stands on")} soft 17, "
             + "naturals pay 3:2 in currency and even money in valuables");

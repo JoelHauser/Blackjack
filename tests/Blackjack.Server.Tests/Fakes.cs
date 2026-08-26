@@ -1,5 +1,6 @@
 using Blackjack.Server;
 using SPTarkov.Server.Core.Models.Common;
+using SPTarkov.Server.Core.Models.Eft.ItemEvent;
 
 namespace Blackjack.Server.Tests;
 
@@ -23,6 +24,13 @@ internal sealed class FakeBank : IBank
 
     internal List<(Wallet Wallet, int Amount)> Credits { get; } = [];
 
+    /// <summary>
+    /// Every response instance handed to this bank. The whole reason the parameter
+    /// exists is that it reaches the client, so a test can check it was not swapped
+    /// for a throwaway on the way down.
+    /// </summary>
+    internal List<ItemEventRouterResponse> Outputs { get; } = [];
+
     /// <summary>Forces TryDebit to fail, simulating money vanishing mid-round.</summary>
     internal bool RefuseDebits { get; set; }
 
@@ -30,7 +38,7 @@ internal sealed class FakeBank : IBank
 
     public int GetBalance(MongoId sessionId, Wallet wallet) => _balances[wallet];
 
-    public bool TryDebit(MongoId sessionId, Wallet wallet, int amount)
+    public bool TryDebit(MongoId sessionId, Wallet wallet, int amount, ItemEventRouterResponse output)
     {
         if (RefuseDebits || amount <= 0 || _balances[wallet] < amount)
         {
@@ -39,10 +47,11 @@ internal sealed class FakeBank : IBank
 
         _balances[wallet] -= amount;
         Debits.Add((wallet, amount));
+        Outputs.Add(output);
         return true;
     }
 
-    public void Credit(MongoId sessionId, Wallet wallet, int amount)
+    public void Credit(MongoId sessionId, Wallet wallet, int amount, ItemEventRouterResponse output)
     {
         if (amount <= 0)
         {
@@ -51,6 +60,7 @@ internal sealed class FakeBank : IBank
 
         _balances[wallet] += amount;
         Credits.Add((wallet, amount));
+        Outputs.Add(output);
     }
 }
 

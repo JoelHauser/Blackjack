@@ -1,4 +1,5 @@
 using Blackjack.Game;
+using SPTarkov.Server.Core.Models.Eft.Common.Request;
 using SPTarkov.Server.Core.Models.Utils;
 
 namespace Blackjack.Server;
@@ -73,4 +74,25 @@ public record BlackjackResponse
     public string Wallet { get; init; } = nameof(Server.Wallet.Roubles);
 
     public static BlackjackResponse Failed(string error) => new() { Ok = false, Error = error };
+}
+
+/// <summary>
+/// The deal, as an item-event action. Sent to the same endpoint the client already
+/// uses for moving items, so the response carries ProfileChanges and the stash
+/// updates without a reload.
+/// </summary>
+public record BlackjackDealAction : BaseInteractionRequestData
+{
+    public string Wallet { get; set; } = nameof(Server.Wallet.Roubles);
+
+    public int Wager { get; set; }
+}
+
+/// <summary>
+/// Hit, Stand, Double or Split. Named Move because the base class already owns
+/// Action, which carries the event name itself.
+/// </summary>
+public record BlackjackPlayAction : BaseInteractionRequestData
+{
+    public string Move { get; set; } = string.Empty;
 }
