@@ -64,6 +64,25 @@ stack can be tested before the hideout interaction is wired up -- it is not the
 intended way in. Bind it through the BepInEx config menu rather than hardcoding it,
 and note F12 is unavailable: that is the config menu itself.
 
+### Panel design
+
+Approved mockup, four states:
+<https://claude.ai/code/artifact/99573205-77e3-4c7e-860d-d4a10e713fb3>
+
+It renders from objects shaped like `RoundView`, so the layout is already checked
+against the payload the server sends rather than an imagined one. Three things it
+pins down that the plugin must preserve:
+
+- The dealer shows one card plus a drawn face-down back, and reads `10+` rather
+  than a total. The hole card is not received, so it cannot be rendered.
+- Buttons are enabled from `availableActions`. The client holds no rules.
+- The active-hand outline follows `activeHandIndex`, and only appears once a split
+  has created a second hand.
+
+Still undecided: whether the currency selector stays with the bet controls or moves
+to the footer, whether the result reads in the strip or as an overlay across the
+felt, and whether the table limits are worth the clutter.
+
 ## Testing without an SPT install
 
 SPT's `InventoryHelper`, `ProfileHelper` and `SaveServer` are concrete classes
