@@ -17,8 +17,9 @@ public class MoneyFlowTests
     private readonly FakeBank _bank = new();
     private readonly FakeProfiles _profiles = new();
     private readonly TableStore _tables = new();
+    private readonly FakeStats _stats = new();
 
-    private BlackjackService Service() => new(_bank, _profiles, _tables);
+    private BlackjackService Service() => new(_bank, _profiles, _tables, _stats);
 
     /// <summary>Installs a table dealing a known stack, then returns the service.</summary>
     private BlackjackService WithDeal(string cards, Rules? rules = null)

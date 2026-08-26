@@ -18,6 +18,8 @@ public record ActionRequest : IRequestData
 
 public record StateRequest : IRequestData;
 
+public record StatsRequest : IRequestData;
+
 /// <summary>
 /// What every route returns. <see cref="Ok"/> false means the request was refused
 /// before anything changed -- the client should show <see cref="Error"/> and keep

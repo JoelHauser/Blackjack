@@ -26,6 +26,9 @@ public class BlackjackCallbacks(
     public ValueTask<string> State(StateRequest info, MongoId sessionId) =>
         new(Respond(service.State(sessionId)));
 
+    public ValueTask<string> Stats(StatsRequest info, MongoId sessionId) =>
+        new(httpResponseUtil.NoBody(service.Stats(sessionId)));
+
     private string Respond(BlackjackResponse response)
     {
         if (response.Warning is not null)

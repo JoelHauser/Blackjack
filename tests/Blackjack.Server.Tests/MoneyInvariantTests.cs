@@ -30,7 +30,7 @@ public class MoneyInvariantTests
         tables.Seed(session, new BlackjackTable(new Rules(), new Random(seed)));
         bank.SetBalance(Wallet.Roubles, 100_000_000);
 
-        var service = new BlackjackService(bank, profiles, tables);
+        var service = new BlackjackService(bank, profiles, tables, new FakeStats());
         var previousBalance = bank.GetBalance(session, Wallet.Roubles);
 
         for (var round = 0; round < 400; round++)

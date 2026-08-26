@@ -59,15 +59,33 @@ server-side, and the client carries a matching enum plus a Unity prefab baked in
 the hideout scene for every area. A new enum value has no model and no icon, and
 the client does not know it exists.
 
-A configurable hotkey opens the same panel from anywhere. That exists so the whole
-stack can be tested before the hideout interaction is wired up -- it is not the
-intended way in. Bind it through the BepInEx config menu rather than hardcoding it,
-and note F12 is unavailable: that is the config menu itself.
+There is no hotkey. The table is the only way in, so the game cannot be reached
+during a raid -- the Rest Space does not exist on a raid map.
+
+**The panel floats over the hideout** rather than taking the screen over: the room
+stays visible and dimmed behind it, so playing reads as something done in the
+hideout rather than a menu opened from anywhere. That is the same reasoning that
+removed the hotkey.
+
+This makes one thing a hard requirement rather than a nicety: **the interaction has
+to free the cursor and swallow player input while the panel is open**, or clicks
+and movement keys leak through to the character behind it. If that turns out to be
+impractical, the fallback is a fullscreen takeover, which matches how EFT presents
+its other hideout area screens.
+
+Two smaller decisions from the same pass: the lifetime record is a **tab in the
+panel header**, not a second interaction on the table; and **Leave table** sits
+beside Deal as well as the corner close, so a player who reconsiders on seeing
+their balance does not have to hunt for the exit.
 
 ### Panel design
 
-Approved mockup, four states:
-<https://claude.ai/code/artifact/99573205-77e3-4c7e-860d-d4a10e713fb3>
+Approved mockups:
+
+- Panel states, including the record view:
+  <https://claude.ai/code/artifact/99573205-77e3-4c7e-860d-d4a10e713fb3>
+- The first frame on opening the table:
+  <https://claude.ai/code/artifact/f5f210b0-1748-4b56-a766-da4f4fcf0ad6>
 
 It renders from objects shaped like `RoundView`, so the layout is already checked
 against the payload the server sends rather than an imagined one. Three things it
@@ -79,9 +97,31 @@ pins down that the plugin must preserve:
 - The active-hand outline follows `activeHandIndex`, and only appears once a split
   has created a second hand.
 
-Still undecided: whether the currency selector stays with the bet controls or moves
-to the footer, whether the result reads in the strip or as an overlay across the
-felt, and whether the table limits are worth the clutter.
+The currency selector stays with the bet controls and disappears once a round
+starts, because the wager locks the currency in for that round.
+
+Still undecided: whether the result reads in the strip above the buttons or as an
+overlay across the felt.
+
+## Stats
+
+Every settled round is folded into a per-profile record: rounds and hands played,
+wins, losses, pushes, blackjacks, busts, streaks, and per-currency totals with best
+and worst round. Served by `POST /blackjack/stats`.
+
+Stored in the mod's own folder via `ModHelper.GetAbsolutePathToModFolder`, **not in
+the SPT profile**. Adding fields to the profile changes its schema, which is what
+makes some mods demand a wipe when they are removed; keeping the record separate
+means uninstalling this mod costs the player nothing but the stats. A corrupt stats
+file logs and starts fresh rather than blocking the mod from loading.
+
+Two counting rules that are easy to get wrong, and are pinned by tests:
+
+- A split is **one round but two hands**. Wins, losses and pushes sum to hands;
+  streaks run on rounds, so a split that wins one and loses the other is a round
+  the player broke even on, not a win and a loss at once.
+- A 21 assembled after a split is a win, **not** a blackjack, and must not be
+  tallied as one.
 
 ## Testing without an SPT install
 

@@ -27,6 +27,11 @@ public class BlackjackRouter(JsonUtil jsonUtil, BlackjackCallbacks callbacks)
                 "/blackjack/state",
                 async (url, info, sessionId, output, cancellationToken) =>
                     await callbacks.State(info, sessionId)),
+
+            new RouteAction<StatsRequest>(
+                "/blackjack/stats",
+                async (url, info, sessionId, output, cancellationToken) =>
+                    await callbacks.Stats(info, sessionId)),
         ])
 {
 }

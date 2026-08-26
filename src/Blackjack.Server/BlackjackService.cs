@@ -13,7 +13,7 @@ namespace Blackjack.Server;
 /// present. HTTP and logging live in <see cref="BlackjackCallbacks"/>.
 /// </summary>
 [Injectable]
-public class BlackjackService(IBank bank, IProfileGateway profiles, TableStore tables)
+public class BlackjackService(IBank bank, IProfileGateway profiles, TableStore tables, IStatsStore stats)
 {
     public async Task<BlackjackResponse> DealAsync(DealRequest request, MongoId sessionId)
     {
@@ -127,6 +127,8 @@ public class BlackjackService(IBank bank, IProfileGateway profiles, TableStore t
         return Success(view, sessionId, session) with { Warning = warning };
     }
 
+    public PlayerStats Stats(MongoId sessionId) => stats.Get(sessionId);
+
     public BlackjackResponse State(MongoId sessionId)
     {
         if (!profiles.HasProfile(sessionId))
@@ -149,6 +151,10 @@ public class BlackjackService(IBank bank, IProfileGateway profiles, TableStore t
         {
             bank.Credit(sessionId, session.Wallet, view.TotalReturned);
         }
+
+        var record = stats.Get(sessionId);
+        record.Record(view, session.Wallet, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        stats.Save(sessionId, record);
 
         session.Staked = 0;
     }

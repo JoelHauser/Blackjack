@@ -67,3 +67,28 @@ internal sealed class FakeProfiles : IProfileGateway
         return Task.CompletedTask;
     }
 }
+
+internal sealed class FakeStats : IStatsStore
+{
+    private readonly Dictionary<string, PlayerStats> _stats = [];
+
+    internal int Saves { get; private set; }
+
+    public PlayerStats Get(MongoId sessionId)
+    {
+        var key = sessionId.ToString();
+        if (!_stats.TryGetValue(key, out var stats))
+        {
+            stats = new PlayerStats();
+            _stats[key] = stats;
+        }
+
+        return stats;
+    }
+
+    public void Save(MongoId sessionId, PlayerStats stats)
+    {
+        _stats[sessionId.ToString()] = stats;
+        Saves++;
+    }
+}

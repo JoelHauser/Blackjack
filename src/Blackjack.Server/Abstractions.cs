@@ -31,3 +31,14 @@ public interface IProfileGateway
     /// <summary>Flushes money changes to disk. Money that is not saved did not move.</summary>
     Task SaveAsync(MongoId sessionId);
 }
+
+/// <summary>
+/// Lifetime stats per profile. An interface for the same reason the others are --
+/// so the accounting can be tested without a filesystem.
+/// </summary>
+public interface IStatsStore
+{
+    PlayerStats Get(MongoId sessionId);
+
+    void Save(MongoId sessionId, PlayerStats stats);
+}
