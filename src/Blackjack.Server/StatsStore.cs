@@ -46,7 +46,30 @@ public class StatsStore : IStatsStore
         _path = Path.Combine(folder, FileName);
 
         _stats = Load();
+
+        try
+        {
+            _fileUtil.WriteFile(_path, _jsonUtil.Serialize(_stats, true));
+            Writable = true;
+        }
+        catch (Exception ex)
+        {
+            Writable = false;
+            _logger.Error($"Blackjack: stats folder is not writable at {_path} -- {ex.Message}");
+        }
     }
+
+    /// <summary>
+    /// Where the record lives. Not named Path -- that would shadow System.IO.Path
+    /// inside this class and break every Path.Combine above.
+    /// </summary>
+    public string FilePath => _path;
+
+    /// <summary>
+    /// Probed once at construction. A read-only mod folder loses the record silently
+    /// otherwise -- the player would just never accumulate stats.
+    /// </summary>
+    public bool Writable { get; private set; }
 
     public PlayerStats Get(MongoId sessionId) =>
         _stats.GetOrAdd(sessionId.ToString(), _ => new PlayerStats());

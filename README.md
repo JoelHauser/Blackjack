@@ -198,6 +198,38 @@ scripts\smoke.ps1 -SessionId <your-profile-id>
 
 That plays a hand over HTTP with no game client attached.
 
+## Diagnosing a bad run
+
+Every line the mod writes is prefixed `[Blackjack]`, so it can be filtered out of a
+busy server console. `config.json` beside the DLL turns verbose logging off once
+things work; leave it on for a first run.
+
+**Start with the ping.**
+
+```
+scripts\smoke.ps1 -SessionId <your-profile-id> -PingOnly
+```
+
+It touches no money and starts no round, and answers the four things that must be
+true before a bet is worth attempting: the mod loaded, the route is reachable, the
+session resolved to a real profile, and that profile's money can be read.
+
+What the failures mean:
+
+| Symptom | Cause |
+| --- | --- |
+| No `[Blackjack]` banner at server startup | The mod never loaded. Almost always the `SptVersion` gate. |
+| Ping returns 404 | Routes not registered, though the mod loaded. |
+| Ping returns a blank `sessionId` | The PHPSESSID cookie assumption is wrong. |
+| `sessionId` set but no profile | Wrong id -- check the filename in `user\profiles\`. |
+| `debit mismatch` / `credit mismatch` in the log | `InventoryHelper` did something other than what was asked. Every balance shown to the client is then suspect. |
+| `AddItemToStash threw ... unpaid` | A payout was lost. The line says exactly how much. |
+
+The mismatch lines are the ones worth watching for. `Bank` compares the balance
+before and after every move against what it intended, so a silent failure inside
+`InventoryHelper` -- a full stash, for instance, which can decline an item without
+throwing -- gets caught rather than quietly shorting the player.
+
 ## SPT version sensitivity
 
 Targets **SPT 4.1.3**. The `SPTarkov.*` NuGet packages lag the game: 4.1.2 is the

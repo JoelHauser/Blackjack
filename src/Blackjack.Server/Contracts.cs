@@ -20,6 +20,27 @@ public record StateRequest : IRequestData;
 
 public record StatsRequest : IRequestData;
 
+public record PingRequest : IRequestData;
+
+/// <summary>
+/// Answers the questions that must be true before a bet is worth attempting: did the
+/// mod load, is the route reachable, did the session resolve to a real profile, and
+/// can its money be read at all.
+/// </summary>
+public record PingResponse
+{
+    public bool Ok { get; init; } = true;
+
+    public string ModVersion { get; init; } = string.Empty;
+
+    /// <summary>Empty here means the session cookie did not resolve.</summary>
+    public string SessionId { get; init; } = string.Empty;
+
+    public bool HasProfile { get; init; }
+
+    public Dictionary<string, int> Balances { get; init; } = [];
+}
+
 /// <summary>
 /// What every route returns. <see cref="Ok"/> false means the request was refused
 /// before anything changed -- the client should show <see cref="Error"/> and keep

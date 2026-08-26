@@ -13,6 +13,11 @@ public class BlackjackRouter(JsonUtil jsonUtil, BlackjackCallbacks callbacks)
     : StaticRouter(
         jsonUtil,
         [
+            new RouteAction<PingRequest>(
+                "/blackjack/ping",
+                async (url, info, sessionId, output, cancellationToken) =>
+                    await callbacks.Ping(info, sessionId)),
+
             new RouteAction<DealRequest>(
                 "/blackjack/deal",
                 async (url, info, sessionId, output, cancellationToken) =>

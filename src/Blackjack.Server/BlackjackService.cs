@@ -129,6 +129,23 @@ public class BlackjackService(IBank bank, IProfileGateway profiles, TableStore t
 
     public PlayerStats Stats(MongoId sessionId) => stats.Get(sessionId);
 
+    /// <summary>Cheap health check. Touches no money and starts no round.</summary>
+    public PingResponse Ping(MongoId sessionId)
+    {
+        var known = profiles.HasProfile(sessionId);
+
+        return new PingResponse
+        {
+            Ok = true,
+            ModVersion = new ModMetadata().Version.ToString(),
+            SessionId = sessionId.ToString(),
+            HasProfile = known,
+            Balances = known
+                ? Enum.GetValues<Wallet>().ToDictionary(w => w.ToString(), w => bank.GetBalance(sessionId, w))
+                : [],
+        };
+    }
+
     public BlackjackResponse State(MongoId sessionId)
     {
         if (!profiles.HasProfile(sessionId))
