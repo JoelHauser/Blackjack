@@ -46,14 +46,14 @@ public class MoneyFlowTests
     }
 
     [Fact]
-    public async Task AWinReturnsDoubleTheStake()
+    public async Task ACurrencyNaturalIsPaidThreeToTwo()
     {
         var service = WithDeal("AS 9H KH 7D");
         var response = await service.DealAsync(Bet(), _session);
 
         Assert.Equal([(Wallet.Roubles, Wager)], _bank.Debits);
-        Assert.Equal([(Wallet.Roubles, 20_000)], _bank.Credits);
-        Assert.Equal(1_010_000, response.Balance);
+        Assert.Equal([(Wallet.Roubles, 25_000)], _bank.Credits);
+        Assert.Equal(1_015_000, response.Balance);
     }
 
     [Fact]
@@ -163,7 +163,7 @@ public class MoneyFlowTests
         Assert.True(response.Ok);
         Assert.Equal(nameof(Wallet.Dollars), response.Wallet);
         Assert.Equal([(Wallet.Dollars, 1_000)], _bank.Debits);
-        Assert.Equal([(Wallet.Dollars, 2_000)], _bank.Credits);
+        Assert.Equal([(Wallet.Dollars, 2_500)], _bank.Credits);
 
         // Roubles must be untouched.
         Assert.Equal(1_000_000, _bank.GetBalance(_session, Wallet.Roubles));

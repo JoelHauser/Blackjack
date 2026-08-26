@@ -61,7 +61,7 @@ public class BlackjackService(
         escrow.Hold(sessionId, wallet, request.Wager);
 
         session.Wallet = wallet;
-        var view = session.Table.Deal(request.Wager);
+        var view = session.Table.Deal(request.Wager, limits.BlackjackPayout);
         session.Staked = view.TotalWagered;
 
         Settle(session, view, sessionId);

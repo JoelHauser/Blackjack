@@ -98,10 +98,10 @@ public class WalletTests
     [InlineData(1)]
     [InlineData(3)]
     [InlineData(7)]
-    public async Task AnyWholeNumberOfValuablesPaysBackAWholeNumber(int wager)
+    public async Task AValuableNaturalPaysEvenMoneySoItAlwaysDivides(int wager)
     {
-        // Even money is what makes valuables workable at all. A 3:2 payout would
-        // settle an odd bitcoin stake on half a coin, which cannot exist.
+        // 3:2 would settle an odd stake on half a coin, which cannot exist. Valuables
+        // are dealt at even money instead, so any whole stake returns a whole payout.
         var service = WithDeal("AS 9H KH 7D");
         _bank.SetBalance(Wallet.GpCoins, 50);
 
@@ -111,11 +111,29 @@ public class WalletTests
 
         Assert.True(response.Ok, response.Error);
         Assert.Equal([(Wallet.GpCoins, wager * 2)], _bank.Credits);
-        Assert.Equal(wager * 2, WalletInfo.For(Wallet.GpCoins).Returns(wager));
     }
 
     [Fact]
-    public async Task ASingleBitcoinWinReturnsTwo()
+    public async Task ACurrencyNaturalStillPaysThreeToTwo()
+    {
+        var service = WithDeal("AS 9H KH 7D");
+
+        await service.DealAsync(
+            new DealRequest { Wager = 10_000, Wallet = nameof(Wallet.Roubles) },
+            _session);
+
+        Assert.Equal([(Wallet.Roubles, 25_000)], _bank.Credits);
+    }
+
+    [Fact]
+    public void TheNaturalRateFollowsWhatIsBeingStaked()
+    {
+        Assert.All(WalletInfo.OfKind(WalletKind.Currency), w => Assert.Equal(1.5, w.BlackjackPayout));
+        Assert.All(WalletInfo.OfKind(WalletKind.Valuable), w => Assert.Equal(1.0, w.BlackjackPayout));
+    }
+
+    [Fact]
+    public async Task ASingleBitcoinNaturalReturnsTwoNotTwoAndAHalf()
     {
         var service = WithDeal("AS 9H KH 7D");
         _bank.SetBalance(Wallet.Bitcoin, 5);

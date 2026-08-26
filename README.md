@@ -130,15 +130,22 @@ distinction does not matter to `Bank`, which walks item stacks either way, but i
 is why they cannot share one set of limits: a minimum of 1,000 is beneath notice in
 roubles and impossible in bitcoin.
 
-**Every win returns double the stake**, naturals included. That is a deliberate
-departure from casino blackjack, which pays 3:2 on a natural, and it is what makes
-valuables workable: one bitcoin at 3:2 settles on two and a half, and half a bitcoin
-does not exist. Double divides cleanly in every currency.
+**The natural rate follows what is being staked.**
 
-A natural is still recorded as a `Blackjack` outcome and counted separately in the
-stats -- it is still the best hand, it just does not pay a bonus. `Rules.BlackjackPayout`
-still supports one if it is ever wanted, but setting it above 1.0 brings the
-fractional problem back for valuables.
+| Stake | Win | Natural |
+| --- | --- | --- |
+| Currency | 2x | **2.5x** (3:2) |
+| Valuables | 2x | **2x** (even money) |
+
+Currency pays the usual 3:2 -- the rounding lands inside a rouble nobody counts.
+Valuables cannot: one bitcoin at 3:2 settles on two and a half, and half a bitcoin
+does not exist. Rounding it either way would be a rule the player could not see, so
+they are dealt at even money instead, which divides for any whole stake.
+
+One shoe serves every currency, so the rate cannot live on the table.
+`BlackjackTable.Deal` takes a per-round override and `WalletInfo.BlackjackPayout`
+supplies it. A natural is still adjudicated as a `Blackjack` outcome and counted
+separately in the stats either way.
 
 Bet limits live in `WalletInfo`, not `Rules`. The engine has no concept of a
 currency -- it takes an int -- so `TableStore` builds tables with deliberately wide

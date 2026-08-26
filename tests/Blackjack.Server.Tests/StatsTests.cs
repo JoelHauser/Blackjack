@@ -55,7 +55,7 @@ public class StatsTests
         var s = service.Stats(_session);
         Assert.Equal(1, s.Blackjacks);
         Assert.Equal(1, s.Wins);
-        Assert.Equal(10_000, s.ByCurrency[nameof(Wallet.Roubles)].BestRound);
+        Assert.Equal(15_000, s.ByCurrency[nameof(Wallet.Roubles)].BestRound);
     }
 
     [Fact]

@@ -12,6 +12,7 @@ public sealed class BlackjackTable
     private readonly List<Hand> _hands = [];
     private Hand _dealer = new(0);
     private int _splitsUsed;
+    private double _roundBlackjackPayout;
 
     public BlackjackTable(Rules? rules = null, Random? rng = null)
     {
@@ -41,7 +42,12 @@ public sealed class BlackjackTable
 
     public int TotalReturned => _hands.Sum(hand => hand.Returned);
 
-    public RoundView Deal(int wager)
+    /// <summary>
+    /// Deals a round. <paramref name="blackjackPayout"/> overrides the table default
+    /// for this round only -- the caller varies it by what is being staked, and one
+    /// shoe serves every currency, so it cannot live on the table.
+    /// </summary>
+    public RoundView Deal(int wager, double? blackjackPayout = null)
     {
         if (Phase is not (RoundPhase.AwaitingBet or RoundPhase.Settled))
         {
@@ -60,6 +66,7 @@ public sealed class BlackjackTable
         _dealer = new Hand(0);
         _splitsUsed = 0;
         ActiveHandIndex = 0;
+        _roundBlackjackPayout = blackjackPayout ?? _rules.BlackjackPayout;
 
         // Only ever reshuffle between rounds. Doing it mid-hand would change the
         // composition of a shoe the player has already seen cards from.
@@ -321,7 +328,7 @@ public sealed class BlackjackTable
             {
                 hand.Outcome = HandOutcome.Blackjack;
                 hand.Returned = hand.Wager
-                    + (int)Math.Round(hand.Wager * _rules.BlackjackPayout, MidpointRounding.AwayFromZero);
+                    + (int)Math.Round(hand.Wager * _roundBlackjackPayout, MidpointRounding.AwayFromZero);
                 continue;
             }
 

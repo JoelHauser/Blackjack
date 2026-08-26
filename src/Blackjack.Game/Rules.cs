@@ -13,14 +13,14 @@ public sealed record Rules
     public bool DealerHitsSoft17 { get; init; }
 
     /// <summary>
-    /// Profit multiplier on a natural. 1.0 means every win pays the same -- double
-    /// the stake back -- which is the rule this table runs.
+    /// Default profit multiplier on a natural: 1.5 is the usual 3:2.
     ///
-    /// Casino blackjack pays 3:2 (1.5). Setting that back reintroduces a problem for
-    /// valuables: one bitcoin at 3:2 settles on two and a half, and half a bitcoin
-    /// does not exist. Even money divides cleanly in every currency.
+    /// Deal takes an override, because the right answer depends on what is being
+    /// staked. Roubles round within a unit nobody can see, so 3:2 is fine. An
+    /// indivisible thing cannot pay it -- one bitcoin at 3:2 settles on two and a
+    /// half -- so valuables are dealt at even money instead.
     /// </summary>
-    public double BlackjackPayout { get; init; } = 1.0;
+    public double BlackjackPayout { get; init; } = 1.5;
 
     public bool DoubleAfterSplit { get; init; } = true;
 

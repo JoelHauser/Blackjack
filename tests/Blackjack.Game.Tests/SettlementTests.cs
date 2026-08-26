@@ -5,27 +5,34 @@ namespace Blackjack.Tests;
 public class SettlementTests
 {
     [Fact]
-    public void ANaturalReturnsDoubleLikeAnyOtherWin()
+    public void NaturalPaysThreeToTwoByDefault()
     {
-        // Player AS/KH = blackjack, dealer 9H/7D = 16 and never gets to draw. The
-        // hand is still recorded as a Blackjack -- it just pays the same as a win.
+        // Player AS/KH = blackjack, dealer 9H/7D = 16 and never gets to draw.
         var view = Deal.Table("AS 9H KH 7D").Deal(Deal.Wager);
 
         Assert.Equal(RoundPhase.Settled, view.Phase);
         Assert.Equal(HandOutcome.Blackjack, view.PlayerHands[0].Outcome);
-        Assert.Equal(20_000, view.TotalReturned);
-        Assert.Equal(10_000, view.Net);
+        Assert.Equal(25_000, view.TotalReturned);
+        Assert.Equal(15_000, view.Net);
     }
 
     [Fact]
-    public void ABonusNaturalPayoutIsStillHonouredWhenConfigured()
+    public void APerRoundPayoutOverridesTheTableDefault()
     {
-        // The table runs even money, but the engine still supports a bonus. 3:2 on
-        // 10,000 returns the stake plus 15,000.
-        var rules = new Rules { BlackjackPayout = 1.5 };
+        // What the server does for valuables: same table, same shoe, even money for
+        // this round because the stake cannot be halved.
+        var view = Deal.Table("AS 9H KH 7D").Deal(Deal.Wager, blackjackPayout: 1.0);
+
+        Assert.Equal(20_000, view.TotalReturned);
+    }
+
+    [Fact]
+    public void SixToFivePayoutIsHonoured()
+    {
+        var rules = new Rules { BlackjackPayout = 1.2 };
         var view = Deal.Table("AS 9H KH 7D", rules).Deal(Deal.Wager);
 
-        Assert.Equal(25_000, view.TotalReturned);
+        Assert.Equal(22_000, view.TotalReturned);
     }
 
     [Fact]

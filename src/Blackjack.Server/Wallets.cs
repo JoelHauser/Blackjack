@@ -51,6 +51,16 @@ public sealed record WalletInfo(
     int MaxBet,
     int Step)
 {
+    /// <summary>
+    /// Profit multiplier on a natural, which depends on whether the stake divides.
+    ///
+    /// Currency pays the usual 3:2 -- rounding lands inside a rouble nobody counts.
+    /// Valuables pay even money, because one bitcoin at 3:2 settles on two and a half
+    /// and half a bitcoin does not exist. Rounding it either way would be a rule the
+    /// player could not see.
+    /// </summary>
+    public double BlackjackPayout => Kind == WalletKind.Currency ? 1.5 : 1.0;
+
     private static readonly Dictionary<Wallet, WalletInfo> Table = new()
     {
         [Wallet.Roubles] = new(Wallet.Roubles, WalletKind.Currency, Money.ROUBLES, "₽", "Roubles", 1_000, 500_000, 1_000),
@@ -70,10 +80,4 @@ public sealed record WalletInfo(
 
     public static IEnumerable<WalletInfo> OfKind(WalletKind kind) => Table.Values.Where(w => w.Kind == kind);
 
-    /// <summary>
-    /// Every win pays double the stake, so any whole number of units settles on a
-    /// whole number of units. There is no fractional case left to warn about --
-    /// restoring a 3:2 payout in Rules would bring one back.
-    /// </summary>
-    public int Returns(int wager) => wager * 2;
 }
