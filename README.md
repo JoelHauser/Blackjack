@@ -49,6 +49,21 @@ The server project is split so the interesting half is testable:
 - `BlackjackCallbacks` is a thin HTTP adapter -- serialise, log, nothing else.
 - `Bank` and `ProfileGateway` are the only classes that touch SPT services.
 
+## How the player reaches the table
+
+**Rest Space.** A blackjack table is added as an interactable object inside the
+existing Rest Space area -- walk up, interact, the panel opens.
+
+It is *not* its own hideout station. `HideoutAreas` ends at `CircleOfCultists = 27`
+server-side, and the client carries a matching enum plus a Unity prefab baked into
+the hideout scene for every area. A new enum value has no model and no icon, and
+the client does not know it exists.
+
+A configurable hotkey opens the same panel from anywhere. That exists so the whole
+stack can be tested before the hideout interaction is wired up -- it is not the
+intended way in. Bind it through the BepInEx config menu rather than hardcoding it,
+and note F12 is unavailable: that is the config menu itself.
+
 ## Testing without an SPT install
 
 SPT's `InventoryHelper`, `ProfileHelper` and `SaveServer` are concrete classes
