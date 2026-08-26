@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Plays a hand of blackjack against a running SPT server, with no game client.
 
@@ -11,10 +11,14 @@
     Watch the server console alongside this. Every line the mod writes is prefixed
     "[Blackjack]", so it can be filtered out of the noise.
 
-    UNVERIFIED: written on a machine with no SPT install. The session id is passed as
-    a PHPSESSID cookie, which is how SPT identifies the profile, but if the ping
-    comes back with a blank sessionId, that assumption is wrong -- check how your
-    build's HTTP listener resolves it and adjust $headers.
+    Verified against a real 4.1.3 server. Two things were wrong when this was written
+    blind, and both are fixed above: the server speaks HTTPS rather than HTTP, and its
+    certificate is self-signed, so the callback has to be told to accept it.
+
+    Still assumed: that the session id travels as a PHPSESSID cookie. If the ping
+    returns a blank sessionId, that is the assumption to revisit. Note 4.1 also has
+    webAuthenticationConfig enabled in http.json, which may gate these routes
+    independently of the cookie.
 
 .PARAMETER SessionId
     The profile id. Find it in the filename under SPT\user\profiles\.
@@ -30,25 +34,64 @@
 #>
 param(
     [Parameter(Mandatory = $true)][string]$SessionId,
-    [string]$Server = "http://127.0.0.1:6969",
+    [string]$Server = "https://127.0.0.1:6969",
     [ValidateSet("Roubles", "Dollars", "Euros")][string]$Wallet = "Roubles",
     [int]$Wager = 10000,
     [switch]$PingOnly
 )
 
 $ErrorActionPreference = "Stop"
-$headers = @{ "Cookie" = "PHPSESSID=$SessionId"; "Content-Type" = "application/json" }
+
+# SPT 4.1 serves HTTPS on the same port it used to serve HTTP, using a self-signed
+# certificate it generates into user\certs\. .NET rejects that by default, and the
+# failure surfaces as "the underlying connection was closed" rather than anything
+# mentioning certificates -- which reads exactly like the server being down.
+#
+# Trusting it is safe here: this only ever talks to a loopback address.
+if ($Server.StartsWith("https:")) {
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+}
+
+# SPT's listener zlib-inflates every request body and zlib-deflates every response,
+# because that is what the EFT client speaks. Two headers opt out of both halves,
+# and without them a plain-JSON request dies inside Inflater with "the archive entry
+# was compressed using an unsupported compression method" -- an error that names
+# neither the header nor the body.
+#
+#   requestcompressed: 0   read my body as plain UTF-8, do not inflate it
+#   responsecompressed: 0  reply in plain JSON, do not deflate it
+#
+# Read out of SptHttpListener.HandleAsync and IsDebugRequest in 4.1.3.
+$headers = @{
+    "Content-Type"       = "application/json"
+    "requestcompressed"  = "0"
+    "responsecompressed" = "0"
+}
+
+# The session id travels as a PHPSESSID cookie -- SPT reads it with
+# Request.Cookies.TryGetValue("PHPSESSID", ...) in HttpServer.HandleRequestAsync.
+#
+# It cannot be passed through -Headers. "Cookie" is a restricted header, and
+# PowerShell drops it silently rather than complaining, so the request arrives with
+# no session at all and the server answers "session id provided was empty, did you
+# restart the server while the game was running?" -- which sends you looking in
+# entirely the wrong place. It has to go in a WebRequestSession.
+$webSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+$serverUri = [Uri]$Server
+$webSession.Cookies.Add((New-Object System.Net.Cookie("PHPSESSID", $SessionId, "/", $serverUri.Host)))
 
 function Invoke-Blackjack {
     param([string]$Route, [hashtable]$Body = @{})
 
     $json = $Body | ConvertTo-Json -Compress
     try {
-        return Invoke-RestMethod -Uri "$Server$Route" -Method Post -Headers $headers -Body $json
+        return Invoke-RestMethod -Uri "$Server$Route" -Method Post -Headers $headers -Body $json -WebSession $webSession
     }
     catch {
         Write-Host "  request to $Route failed: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "  if this is a connection error the server is not running; if it is a 404," -ForegroundColor DarkGray
+        Write-Host "  a closed connection usually means the scheme is wrong -- 4.1 serves https," -ForegroundColor DarkGray
+        Write-Host "  not http. A refused connection means the server is not running. A 404 means" -ForegroundColor DarkGray
         Write-Host "  the mod did not load -- check the server console for a [Blackjack] banner." -ForegroundColor DarkGray
         exit 1
     }
@@ -87,7 +130,9 @@ Write-Host "  profile       $(if ($ping.hasProfile) { 'found' } else { 'NOT FOUN
 
 if (-not $ping.sessionId) {
     Write-Host ""
-    Write-Host "The server did not resolve a session. The PHPSESSID cookie assumption is wrong." -ForegroundColor Red
+    Write-Host "The server did not resolve a session. The cookie is not reaching it -- check" -ForegroundColor Red
+    Write-Host "that -WebSession is still being passed, and that the id matches a filename in" -ForegroundColor Red
+    Write-Host "SPT_Runtime\user\profiles\ without the .json." -ForegroundColor Red
     exit 1
 }
 

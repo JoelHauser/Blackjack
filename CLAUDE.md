@@ -141,6 +141,33 @@ Each of these cost real time. None are hypothetical.
 - **`Compress-Archive` writes backslash zip entries**, which extract as one literal
   filename on Linux. Pack releases with `System.IO.Compression` instead.
 
+## Talking to the server without a game client
+
+Three things about SPT's HTTP layer, each of which cost a round trip to discover
+because the error named none of them. All read out of 4.1.3 and then confirmed
+against a running server.
+
+- **It serves HTTPS, not HTTP**, on the same port, with a self-signed certificate
+  it generates into `user\certs\`. .NET rejects that by default and reports "the
+  underlying connection was closed", which reads as the server being down.
+- **Every request body is zlib-inflated and every response deflated**, because that
+  is what the EFT client speaks. Two headers opt out, and
+  `SptHttpListener.HandleAsync` / `IsDebugRequest` are where they are read:
+
+  | Header | Effect |
+  | --- | --- |
+  | `requestcompressed: 0` | read my body as plain UTF-8 |
+  | `responsecompressed: 0` | reply in plain JSON |
+
+  Without them a plain-JSON body dies inside `Inflater` with "the archive entry was
+  compressed using an unsupported compression method".
+- **The session id is a `PHPSESSID` cookie**, read with
+  `Request.Cookies.TryGetValue` in `HttpServer.HandleRequestAsync`. In PowerShell it
+  cannot be passed through `-Headers`: `Cookie` is a restricted header and it is
+  dropped **silently**, so the request arrives with no session and the server says
+  "session id provided was empty, did you restart the server while the game was
+  running?". Use a `WebRequestSession`. `scripts\smoke.ps1` does.
+
 ## Architecture
 
 Server-authoritative. The client renders what it is handed and sends intents; it
@@ -232,10 +259,23 @@ now, deliberately, because nothing has run for real yet.
 - **Statically verified against a real 4.1.3 install** -- every API the mod calls
   exists with the signature it expects, and every wallet template exists with the
   stack limit the code reads. See "What the install settled".
-- **Still nothing has *run* against a real SPT server.** Static resolution proves the
-  calls are well formed, not that a profile survives them. `Bank`'s
-  `InventoryHelper` calls have never touched one.
+- **It loads and answers.** On a real 4.1.3 server the mod appears in the mod list,
+  writes its data file, registers its routes, and `smoke.ps1 -PingOnly` resolves the
+  session and reads all six balances back. That is the first time any of this has
+  run outside a test double.
+- **No money has moved yet.** `Bank`'s `InventoryHelper` calls remain the untested
+  half: a deal has never been dealt against a real profile.
 - `releases/Blackjack-0.1.0.zip` is built and committed.
+
+### Testing on Joel's box
+
+Profile `6a8cd3a7e0b8272790f41285` ("test", level 69) is the sandbox -- roughly
+499M roubles, 500M dollars, 500M euros, 5,000 GP coins. The other profile,
+`6a7501c247d2e12a3892aaee` ("SCOOP", level 16), is the real one; leave it alone.
+
+**Bitcoin and Lega medals are both at zero there**, so the two wallets with a
+`StackMaxSize` of 1 -- the riskiest payout path, one item per coin -- cannot be
+exercised by betting until some are added.
 
 ### Open items
 
@@ -246,8 +286,13 @@ now, deliberately, because nothing has run for real yet.
   Note 4.1.3's `PluginValidator` reads a plugin's references to `spt-*` and requires
   a major.minor match, so the plugin must be built against this install, not an
   older one.
-- **`smoke.ps1` is unverified**, including whether the PHPSESSID cookie resolves a
-  session. A blank `sessionId` from `/blackjack/ping` is the direct answer.
+- **`smoke.ps1` works** against a real server, as of the first run on Joel's box.
+  The PHPSESSID assumption was right; three things around it were wrong. See
+  "Talking to the server without a game client".
+- **`/blackjack/ping` throws on an unresolved session.** `ProfileGateway.HasProfile`
+  calls `GetPmcProfile`, which throws on an empty `MongoId` rather than returning
+  null, so the health check 500s on exactly the condition it exists to report. It
+  should answer `hasProfile: false` and let the caller see why.
 - **Mail attachments are unverified** -- SPT may expect `ParentId`/`SlotId` set on
   them in ways not checked here.
 - **`ExtensionData` serialisation is unverified**, as is whether the client accepts
