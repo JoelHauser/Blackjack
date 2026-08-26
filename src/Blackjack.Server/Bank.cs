@@ -1,4 +1,4 @@
-using SPTarkov.DI.Annotations;
+﻿using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.Extensions;
 using SPTarkov.Server.Core.Helpers.Items;
 using SPTarkov.Server.Core.Helpers.Profile;
@@ -151,8 +151,13 @@ public class Bank(
         var tpl = TplFor(wallet);
         var before = GetBalance(sessionId, wallet);
 
-        // Roubles cap at 500,000 per stack. One oversized stack would be rejected
-        // by the client, so the payout is split before it is handed over.
+        // One oversized stack would be rejected by the client, so the payout is split
+        // before it is handed over. The limits are worth knowing: roubles stack to
+        // 1,000,000 and dollars and euros to 50,000, but bitcoin and Lega medals have
+        // a StackMaxSize of 1 and do not stack at all -- a ten-bitcoin win is ten
+        // separate items needing ten free grid cells, which is the most likely way a
+        // payout runs out of room. Read from the database rather than assumed, because
+        // an item mod can change any of them.
         var maxStack = itemHelper.GetItem(tpl).Value?.Properties?.StackMaxSize ?? amount;
         var remaining = amount;
         var stacksMade = 0;

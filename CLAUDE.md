@@ -36,13 +36,29 @@ The engine knows nothing about currency -- it takes an `int` and returns an `int
 Everything that maps a `Wallet` to an item template lives in `Wallets.cs` and
 `Bank.cs`. Keep it that way; it is what makes the rules testable.
 
-## There is no SPT install on this machine
+## Whether there is an SPT install depends on the machine
 
-Nothing in this repo has ever run against a real server. Every claim about SPT
-behaviour is either read from the source or unverified -- say which.
+This repo is worked on from more than one machine. Check before assuming:
 
-**To inspect SPT's API, reflect over the real assembly.** .NET 10 file-based apps
-make this a one-liner, and it beats guessing at namespaces:
+| Machine | Installs |
+| --- | --- |
+| The one this file was written on | none |
+| Joel's Windows box | `H:\SPT4.1.X` (4.1.3) and `H:\SPT2026` (4.0.13) |
+
+**With an install present**, three things the rest of this file calls unverifiable
+become checkable, and all three have now been done -- see "What the install
+settled" below. Item templates live at
+`SPT_Runtime/SPT_Data/database/templates/items.json`, the server assemblies at
+`SPT_Runtime/SPTarkov.*.dll`, and `EscapeFromTarkov_Data/Managed/Assembly-CSharp.dll`
+is what the client plugin needs.
+
+**Reflecting over the installed assemblies beats reflecting over the NuGet
+package**, because the package lags: NuGet tops out at 4.1.2 and the install is
+4.1.3. Mono.Cecil ships with the game at `BepInEx/core/Mono.Cecil.dll` and reads
+them without loading them.
+
+**Without an install**, .NET 10 file-based apps make the NuGet package a
+one-liner:
 
 ```csharp
 // probe.cs, run with: dotnet run probe.cs
@@ -53,10 +69,41 @@ foreach (var m in t.GetMethods()) Console.WriteLine(m);
 ```
 
 Source lives at `github.com/sp-tarkov/server-csharp` under
-`Libraries/SPTarkov.Server.Core/`. Item templates are **not** there -- they ship
-with the install -- so stack sizes and item properties cannot be checked here.
+`Libraries/SPTarkov.Server.Core/`.
 
-NuGet tops out at **4.1.2**; there is no 4.1.3 package. The libraries lag the game.
+## What the install settled
+
+Done on Joel's box against 4.1.3, by reading the shipped assemblies and database.
+None of it required running the server.
+
+- **Building against NuGet 4.1.2 is safe on a 4.1.3 install.** Every SPT symbol the
+  compiled mod names -- 36 types and 63 members -- resolves against the installed
+  `SPTarkov.*` assemblies. Nothing the mod touches moved between the two.
+- **The 4.1.3 namespaces**, which are not what the older docs say:
+  `Helpers.Profile.InventoryHelper`, `Helpers.Profile.ProfileHelper`,
+  `Helpers.Items.ItemHelper`, `Services.Commerce.MailSendService`,
+  `Servers.SaveServer`, `Common.Models.Logging.ISptLogger<T>`.
+- **Signatures on the money path are as assumed**:
+  `AddItemToStash(MongoId, AddItemDirectRequest, PmcData, ItemEventRouterResponse)`
+  returning void, and `GetPmcProfile(MongoId)` returning `PmcData`.
+- **All six wallet templates exist**, with these real stack limits:
+
+  | Wallet | Template | StackMaxSize |
+  | --- | --- | --- |
+  | Roubles | `5449016a4bdc2d6f028b456f` | 1,000,000 |
+  | Dollars | `5696686a4bdc2da3298b456a` | 50,000 |
+  | Euros | `569668774bdc2da2298b4568` | 50,000 |
+  | GP coins | `5d235b4d86f7742e017bc88a` | 100 |
+  | Bitcoin | `59faff1d86f7746c51718c9c` | **1** |
+  | Lega medal | `6656560053eaaa7a23349c86` | **1** |
+
+  **Bitcoin and Lega medals do not stack.** A maximum bitcoin win is 20 separate
+  items needing 20 free grid cells, which is the likeliest way a payout runs out of
+  room -- and the reason `Bank.Credit`'s shortfall-to-mail path matters more than it
+  looked. `Bank` reads these from the database rather than assuming them, so an item
+  mod that changes a limit is handled.
+
+  A comment in `Bank.cs` claimed roubles cap at 500,000. They cap at 1,000,000.
 
 ## Things that will bite you
 
@@ -178,17 +225,27 @@ now, deliberately, because nothing has run for real yet.
 
 **Update this section as work completes.**
 
-- Working branch **`test`**; `main` is behind and needs a merge before release.
+- Working branch **`test`**; `main` is behind by three commits, a clean
+  fast-forward, and needs a merge before release.
 - Server mod is feature-complete: rules, six wallets, money, stats, escrow, logging,
-  both transports. 103 tests green.
-- **Nothing has run against a real SPT server.** `Bank`'s `InventoryHelper` calls in
-  particular have never touched a profile.
+  both transports. 103 tests green, re-run on Joel's box.
+- **Statically verified against a real 4.1.3 install** -- every API the mod calls
+  exists with the signature it expects, and every wallet template exists with the
+  stack limit the code reads. See "What the install settled".
+- **Still nothing has *run* against a real SPT server.** Static resolution proves the
+  calls are well formed, not that a profile survives them. `Bank`'s
+  `InventoryHelper` calls have never touched one.
 - `releases/Blackjack-0.1.0.zip` is built and committed.
 
 ### Open items
 
-- **The client plugin does not exist.** It needs `Assembly-CSharp.dll` and the SPT
-  client DLLs from a game install, so it cannot be started here.
+- **The client plugin does not exist.** No longer blocked: on Joel's box
+  `H:\SPT4.1.X` has `EscapeFromTarkov_Data/Managed/Assembly-CSharp.dll` and the SPT
+  client DLLs under `BepInEx/plugins/spt/`. This is the largest remaining piece and
+  the only thing standing between the mod and a first real test.
+  Note 4.1.3's `PluginValidator` reads a plugin's references to `spt-*` and requires
+  a major.minor match, so the plugin must be built against this install, not an
+  older one.
 - **`smoke.ps1` is unverified**, including whether the PHPSESSID cookie resolves a
   session. A blank `sessionId` from `/blackjack/ping` is the direct answer.
 - **Mail attachments are unverified** -- SPT may expect `ParentId`/`SlotId` set on
