@@ -1,6 +1,8 @@
-using Blackjack.Game;
+﻿using Blackjack.Game;
+using SPTarkov.Server.Core.Models.Eft.ItemEvent;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.Models.Common;
+using SPTarkov.Server.Core.Routers;
 using SPTarkov.Server.Core.Utils;
 
 namespace Blackjack.Server;
@@ -15,24 +17,41 @@ namespace Blackjack.Server;
 public class BlackjackCallbacks(
     HttpResponseUtil httpResponseUtil,
     BlackjackService service,
+    EventOutputHolder eventOutputHolder,
     BlackjackLog log)
 {
+    /// <summary>
+    /// A response object SPT's own inventory helpers can write into.
+    ///
+    /// It must come from EventOutputHolder, not from `new`. A fresh
+    /// ItemEventRouterResponse initialises none of its properties, and
+    /// RemoveItemByCount reaches straight into output.ProfileChanges[sessionId],
+    /// so a hand-built one throws NullReferenceException -- *after* the items have
+    /// already been taken. That failure looked like "not enough roubles" while the
+    /// stake quietly left the stash.
+    ///
+    /// The static routes still cannot return this to the client, so the stash view
+    /// stays stale until reload. That is the documented limitation of curl testing.
+    /// Being unread is fine; being uninitialised is not.
+    /// </summary>
+    private ItemEventRouterResponse Output(MongoId sessionId) => eventOutputHolder.GetOutput(sessionId);
+
     public async ValueTask<string> Deal(DealRequest info, MongoId sessionId)
     {
         Received("deal", sessionId, $"{info.Wager} {info.Wallet}");
-        return Respond(await service.DealAsync(info, sessionId));
+        return Respond(await service.DealAsync(info, sessionId, Output(sessionId)));
     }
 
     public async ValueTask<string> Act(ActionRequest info, MongoId sessionId)
     {
         Received("action", sessionId, info.Action);
-        return Respond(await service.ActAsync(info, sessionId));
+        return Respond(await service.ActAsync(info, sessionId, Output(sessionId)));
     }
 
     public ValueTask<string> State(StateRequest info, MongoId sessionId)
     {
         Received("state", sessionId, null);
-        return new ValueTask<string>(Respond(service.State(sessionId)));
+        return new ValueTask<string>(Respond(service.State(sessionId, Output(sessionId))));
     }
 
     public ValueTask<string> Stats(StatsRequest info, MongoId sessionId)

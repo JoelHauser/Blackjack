@@ -109,6 +109,18 @@ None of it required running the server.
 
 Each of these cost real time. None are hypothetical.
 
+- **`new ItemEventRouterResponse()` is not a usable response.** Its constructor
+  initialises nothing, and `RemoveItemByCount` reaches into
+  `output.ProfileChanges[sessionId]`, so a hand-built one throws
+  NullReferenceException -- *after* the items are already gone. That failure reported
+  itself as "not enough roubles" while the stake had left the stash. Get one from
+  `EventOutputHolder.GetOutput(sessionId)`. The static routes cannot return it to the
+  client, so the stash view stays stale; being unread is fine, being uninitialised is
+  not.
+- **A mod can change any item's stack limit.** Roubles cap at 1,000,000 in the base
+  database and at 20,000,000 on a server running BarterItemsStacks. `Bank` reads
+  `StackMaxSize` live for this reason; assuming the database value would be wrong on
+  a real install.
 - **`PaymentService` cannot settle a bet.** Both entry points derive currency from
   a trader -- `GiveProfileMoney` reads `trader.Currency`, and `PayMoney`'s
   no-trader path is hardcoded to roubles. `Bank` walks item stacks directly.
@@ -161,6 +173,18 @@ against a running server.
 
   Without them a plain-JSON body dies inside `Inflater` with "the archive entry was
   compressed using an unsupported compression method".
+- **Request bodies are matched case-sensitively.** `{"wager": 10000}` binds nothing
+  against `public int Wager`; every property silently takes its default. That made a
+  10,000 bet arrive as 0 and come back "bets run from 1,000 to 500,000", while
+  `Wallet` -- which has a default of Roubles -- looked like it had bound correctly.
+  Send PascalCase.
+- **Enums go over the wire as integers, not names.** `phase` is `1`, not
+  `"PlayerTurn"`. Comparing against the name never matches and never errors, which
+  left a dealt hand sitting in PlayerTurn with the stake in escrow while the caller
+  reported success. `RoundPhase` is AwaitingBet/PlayerTurn/DealerTurn/Settled,
+  `HandOutcome` is Pending/Win/Lose/Push/Blackjack/Bust, `PlayerAction` is
+  Hit/Stand/Double/Split, all zero-based. Worth making these strings before the
+  client plugin is written, so it does not hardcode magic numbers.
 - **The session id is a `PHPSESSID` cookie**, read with
   `Request.Cookies.TryGetValue` in `HttpServer.HandleRequestAsync`. In PowerShell it
   cannot be passed through `-Headers`: `Cookie` is a restricted header and it is
@@ -263,8 +287,14 @@ now, deliberately, because nothing has run for real yet.
   writes its data file, registers its routes, and `smoke.ps1 -PingOnly` resolves the
   session and reads all six balances back. That is the first time any of this has
   run outside a test double.
-- **No money has moved yet.** `Bank`'s `InventoryHelper` calls remain the untested
-  half: a deal has never been dealt against a real profile.
+- **Money moves correctly.** Hands have been dealt, played and settled against a real
+  profile in both directions. A win credited 20,000 against a 10,000 stake and a loss
+  took 25,000, each landing on the exact expected balance, with escrow empty and stats
+  written afterwards. `Bank.Debit`, `Bank.Credit`, escrow and settlement have all now
+  run for real.
+- **Untested still:** valuables (bitcoin and Lega are at zero in the test profile),
+  the full-stash shortfall-to-mail path, a restart mid-round, split and double, and
+  the item-event transport -- everything so far went through the static routes.
 - `releases/Blackjack-0.1.0.zip` is built and committed.
 
 ### Testing on Joel's box
@@ -289,10 +319,8 @@ exercised by betting until some are added.
 - **`smoke.ps1` works** against a real server, as of the first run on Joel's box.
   The PHPSESSID assumption was right; three things around it were wrong. See
   "Talking to the server without a game client".
-- **`/blackjack/ping` throws on an unresolved session.** `ProfileGateway.HasProfile`
-  calls `GetPmcProfile`, which throws on an empty `MongoId` rather than returning
-  null, so the health check 500s on exactly the condition it exists to report. It
-  should answer `hasProfile: false` and let the caller see why.
+- **Make the wire enums strings** before the client plugin is written. See the
+  integers note above.
 - **Mail attachments are unverified** -- SPT may expect `ParentId`/`SlotId` set on
   them in ways not checked here.
 - **`ExtensionData` serialisation is unverified**, as is whether the client accepts

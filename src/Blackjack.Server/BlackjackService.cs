@@ -1,4 +1,4 @@
-using Blackjack.Game;
+﻿using Blackjack.Game;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.ItemEvent;
@@ -21,6 +21,11 @@ public class BlackjackService(
     IStatsStore stats,
     IEscrowStore escrow)
 {
+    /// <summary>
+    /// Test-only convenience. The throwaway response it builds is not initialised the
+    /// way SPT's inventory helpers expect, so anything with a real InventoryHelper
+    /// behind it must call the overload below with an EventOutputHolder response.
+    /// </summary>
     public Task<BlackjackResponse> DealAsync(DealRequest request, MongoId sessionId) =>
         DealAsync(request, sessionId, new ItemEventRouterResponse());
 
@@ -181,14 +186,19 @@ public class BlackjackService(
         };
     }
 
-    public BlackjackResponse State(MongoId sessionId)
+    /// <summary>Test-only convenience -- see <see cref="DealAsync(DealRequest, MongoId)"/>.</summary>
+    public BlackjackResponse State(MongoId sessionId) => State(sessionId, new ItemEventRouterResponse());
+
+    public BlackjackResponse State(MongoId sessionId, ItemEventRouterResponse output)
     {
         if (!profiles.HasProfile(sessionId))
         {
             return BlackjackResponse.Failed("No PMC profile for this session.");
         }
 
-        var refund = RefundAbandonedStake(sessionId, new ItemEventRouterResponse());
+        // A refund moves real items, so this needs the caller's response, not a
+        // throwaway -- an abandoned stake is returned through the same path a payout is.
+        var refund = RefundAbandonedStake(sessionId, output);
 
         var session = tables.For(sessionId);
         return Success(session.Table.View(), sessionId, session) with { Note = refund };

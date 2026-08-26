@@ -97,6 +97,26 @@ function Invoke-Blackjack {
     }
 }
 
+# SPT serialises enums as their integer values, not their names, so the wire carries
+# phase 1 rather than "PlayerTurn". Comparing against the name silently never matches,
+# which left a dealt hand sitting in PlayerTurn with the stake in escrow and this
+# script reporting success. Accept either form.
+$RoundPhaseNames = @("AwaitingBet", "PlayerTurn", "DealerTurn", "Settled")
+$HandOutcomeNames = @("Pending", "Win", "Lose", "Push", "Blackjack", "Bust")
+$PlayerActionNames = @("Hit", "Stand", "Double", "Split")
+
+function ConvertTo-EnumName {
+    param($Value, [string[]]$Names)
+
+    if ($null -eq $Value) { return $null }
+    $index = 0
+    if ([int]::TryParse("$Value", [ref]$index)) {
+        if ($index -ge 0 -and $index -lt $Names.Count) { return $Names[$index] }
+        return "$Value"
+    }
+    return "$Value"
+}
+
 function Show-Round {
     param($Response)
 
@@ -109,13 +129,15 @@ function Show-Round {
 
     Write-Host "  dealer  $($round.dealer.cards -join ' ') ($($round.dealer.value))"
     foreach ($hand in $round.playerHands) {
-        $outcome = if ($hand.outcome -eq "Pending") { "" } else { "  $($hand.outcome)" }
+        $outcomeName = ConvertTo-EnumName $hand.outcome $HandOutcomeNames
+        $outcome = if ($outcomeName -eq "Pending") { "" } else { "  $outcomeName" }
         Write-Host "  player  $($hand.cards -join ' ') ($($hand.value))  staked $($hand.wager)$outcome"
     }
 
-    Write-Host "  phase $($round.phase)   balance $($Response.balance) $($Response.wallet)"
+    Write-Host "  phase $(ConvertTo-EnumName $round.phase $RoundPhaseNames)   balance $($Response.balance) $($Response.wallet)"
     if ($round.availableActions) {
-        Write-Host "  legal: $($round.availableActions -join ', ')" -ForegroundColor DarkGray
+        $legal = $round.availableActions | ForEach-Object { ConvertTo-EnumName $_ $PlayerActionNames }
+        Write-Host "  legal: $($legal -join ', ')" -ForegroundColor DarkGray
     }
 }
 
@@ -157,14 +179,18 @@ if ($PingOnly) {
 
 Write-Host ""
 Write-Host "Dealing $Wager $Wallet" -ForegroundColor Cyan
-$state = Invoke-Blackjack -Route "/blackjack/deal" -Body @{ wallet = $Wallet; wager = $Wager }
+# PascalCase deliberately. SPT deserialises request bodies case-sensitively, so
+# lowercase keys bind nothing and every property silently takes its default -- which
+# for DealRequest means wager 0, refused as "bets run from 1,000 to 500,000" while
+# the number you passed was well inside that range.
+$state = Invoke-Blackjack -Route "/blackjack/deal" -Body @{ Wallet = $Wallet; Wager = $Wager }
 Show-Round $state
 
 # Stand immediately -- the point is proving the round settles and the money moves,
 # not playing well.
-while ($state.ok -and $state.round.phase -eq "PlayerTurn") {
+while ($state.ok -and (ConvertTo-EnumName $state.round.phase $RoundPhaseNames) -eq "PlayerTurn") {
     Write-Host "Standing..." -ForegroundColor Cyan
-    $state = Invoke-Blackjack -Route "/blackjack/action" -Body @{ action = "Stand" }
+    $state = Invoke-Blackjack -Route "/blackjack/action" -Body @{ Action = "Stand" }
     Show-Round $state
 }
 
