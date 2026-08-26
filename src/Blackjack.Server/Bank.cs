@@ -7,6 +7,7 @@ using SPTarkov.Server.Core.Models.Eft.Common;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 using SPTarkov.Server.Core.Models.Eft.Inventory;
 using SPTarkov.Server.Core.Models.Eft.ItemEvent;
+using SPTarkov.Server.Core.Services.Commerce;
 
 namespace Blackjack.Server;
 
@@ -29,9 +30,17 @@ public class Bank(
     InventoryHelper inventoryHelper,
     ItemHelper itemHelper,
     ProfileHelper profileHelper,
+    MailSendService mailSendService,
     BlackjackLog log)
     : IBank
 {
+    /// <summary>
+    /// How long a mailed payout waits to be collected. Long, because the message only
+    /// exists when the stash was too full to take the winnings directly -- expiring it
+    /// would destroy the very payout this is rescuing.
+    /// </summary>
+    private const long MailStorageSeconds = 90L * 24 * 60 * 60;
+
     public static MongoId TplFor(Wallet wallet) => WalletInfo.For(wallet).Tpl;
 
     /// <summary>
@@ -190,13 +199,60 @@ public class Bank(
         var after = GetBalance(sessionId, wallet);
         log.Detail($"credit done: {wallet} {before:N0} -> {after:N0} in {stacksMade} stack(s)");
 
-        if (after != before + amount)
+        // AddItemToStash can decline to place an item without throwing -- a full stash
+        // is the usual reason. Detecting that is not enough: the winnings would simply
+        // be gone. Whatever failed to land is posted instead.
+        var shortfall = before + amount - after;
+        if (shortfall > 0)
         {
-            // A full stash is the likely cause -- AddItemToStash can decline to place
-            // an item without throwing.
             log.Error(
-                $"credit mismatch: {wallet} is {after:N0} but should be {before + amount:N0}. "
-                + "A full stash would explain this.");
+                $"credit shortfall: {wallet} is {after:N0} but should be {before + amount:N0}. "
+                + $"Posting the missing {shortfall:N0} instead -- a full stash would explain this.");
+
+            PayByMail(sessionId, wallet, shortfall);
+        }
+    }
+
+    /// <summary>
+    /// Last resort for winnings the stash would not take. Mail holds the items until
+    /// the player makes room, and SPT's own new-message notification tells them it is
+    /// waiting, so nothing is lost and nothing needs a popup of our own.
+    /// </summary>
+    private void PayByMail(MongoId sessionId, Wallet wallet, int amount)
+    {
+        var tpl = TplFor(wallet);
+        var maxStack = itemHelper.GetItem(tpl).Value?.Properties?.StackMaxSize ?? amount;
+        var items = new List<Item>();
+        var remaining = amount;
+
+        while (remaining > 0)
+        {
+            var size = (int)Math.Min(remaining, maxStack);
+            items.Add(new Item
+            {
+                Id = new MongoId(),
+                Template = tpl,
+                Upd = new Upd { StackObjectsCount = size },
+            });
+
+            remaining -= size;
+        }
+
+        try
+        {
+            mailSendService.SendSystemMessageToPlayer(
+                sessionId,
+                $"Your table winnings could not fit in your stash. {amount:N0} {WalletInfo.For(wallet).Label} attached.",
+                items,
+                MailStorageSeconds,
+                null);
+
+            log.Info($"posted {amount:N0} {wallet} to the player -- collect it from messages.");
+        }
+        catch (Exception ex)
+        {
+            // Nothing left to fall back on, so this is the loudest line in the mod.
+            log.Error($"could not post {amount:N0} {wallet}. THE PLAYER HAS LOST THIS PAYOUT.", ex);
         }
     }
 

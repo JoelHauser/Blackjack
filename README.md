@@ -141,6 +141,26 @@ Bet limits live in `WalletInfo`, not `Rules`. The engine has no concept of a
 currency -- it takes an int -- so `TableStore` builds tables with deliberately wide
 engine limits and the per-wallet ones govern.
 
+## Winning a hand
+
+The panel is the notification. The settled state shows the outcome and the payout
+while the player is looking straight at it, so there is no system popup -- one would
+only compete with the thing that already says it.
+
+Winnings go straight to the stash. Posting them instead would mean a message per
+hand, each needing manual collection, which would make the game unplayable.
+
+**Except when the stash will not take them.** `AddItemToStash` can decline to place
+an item without throwing, usually because the stash is full, and the winnings would
+simply be gone. `Bank.Credit` compares the balance before and after against what it
+intended, and posts whatever failed to land as a message with the items attached --
+the same way insurance returns arrive. SPT's own new-message notification tells the
+player it is waiting. Mail is held for 90 days, because a payout that expires is the
+payout this exists to rescue.
+
+A trader could front that message instead of the system. Nothing in the hideout is
+plausibly running the table, so it is a system message for now.
+
 ## Unsettled stakes
 
 The table lives in memory; the stake does not. A stake is debited from the profile
