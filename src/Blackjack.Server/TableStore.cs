@@ -41,6 +41,17 @@ public class TableStore
             sessionId.ToString(),
             _ => new PlayerSession { Table = new BlackjackTable(new Rules()) });
 
+    /// <summary>
+    /// Test seam: install a table with a known shoe, so a test can pin the deal.
+    /// Mirrors Shoe.Stacked -- a real game never calls this.
+    /// </summary>
+    public PlayerSession Seed(MongoId sessionId, BlackjackTable table)
+    {
+        var session = new PlayerSession { Table = table };
+        _sessions[sessionId.ToString()] = session;
+        return session;
+    }
+
     /// <summary>Drops a seat, abandoning any in-progress round.</summary>
     public void Clear(MongoId sessionId) => _sessions.TryRemove(sessionId.ToString(), out _);
 }

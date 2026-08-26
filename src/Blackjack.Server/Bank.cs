@@ -28,7 +28,8 @@ public enum Wallet
 /// to support all three.
 /// </summary>
 [Injectable]
-public class Bank(InventoryHelper inventoryHelper, ItemHelper itemHelper)
+public class Bank(InventoryHelper inventoryHelper, ItemHelper itemHelper, ProfileHelper profileHelper)
+    : IBank
 {
     public static MongoId TplFor(Wallet wallet) => wallet switch
     {
@@ -43,27 +44,30 @@ public class Bank(InventoryHelper inventoryHelper, ItemHelper itemHelper)
     /// containers as well as loose in the stash, which matches what the player
     /// would consider their balance.
     /// </summary>
-    public int GetBalance(PmcData pmcData, Wallet wallet)
+    public int GetBalance(MongoId sessionId, Wallet wallet)
     {
-        var tpl = TplFor(wallet);
-        return StacksOf(pmcData, tpl).Sum(item => item.GetItemStackSize());
+        var pmcData = profileHelper.GetPmcProfile(sessionId);
+        if (pmcData is null)
+        {
+            return 0;
+        }
+
+        return StacksOf(pmcData, TplFor(wallet)).Sum(item => item.GetItemStackSize());
     }
 
     /// <summary>
     /// Takes the stake. Returns false without touching anything if the player is
     /// short -- the caller must not deal a hand it cannot collect on.
     /// </summary>
-    public bool TryDebit(
-        MongoId sessionId,
-        PmcData pmcData,
-        Wallet wallet,
-        int amount,
-        ItemEventRouterResponse output)
+    public bool TryDebit(MongoId sessionId, Wallet wallet, int amount)
     {
-        if (amount <= 0 || GetBalance(pmcData, wallet) < amount)
+        var pmcData = profileHelper.GetPmcProfile(sessionId);
+        if (pmcData is null || amount <= 0 || GetBalance(sessionId, wallet) < amount)
         {
             return false;
         }
+
+        var output = new ItemEventRouterResponse();
 
         var tpl = TplFor(wallet);
         var remaining = amount;
@@ -86,17 +90,15 @@ public class Bank(InventoryHelper inventoryHelper, ItemHelper itemHelper)
     }
 
     /// <summary>Pays winnings back into the stash, respecting max stack size.</summary>
-    public void Credit(
-        MongoId sessionId,
-        PmcData pmcData,
-        Wallet wallet,
-        int amount,
-        ItemEventRouterResponse output)
+    public void Credit(MongoId sessionId, Wallet wallet, int amount)
     {
-        if (amount <= 0)
+        var pmcData = profileHelper.GetPmcProfile(sessionId);
+        if (pmcData is null || amount <= 0)
         {
             return;
         }
+
+        var output = new ItemEventRouterResponse();
 
         var tpl = TplFor(wallet);
 

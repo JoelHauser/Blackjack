@@ -34,12 +34,39 @@ locally dealing and reconciling.
 | `src/Blackjack.Game` | net10.0 | Rules engine. No SPT reference, no I/O, no randomness it does not own. |
 | `src/Blackjack.Server` | net10.0 | SPT server mod: routes, DI registration, currency. |
 | `tests/Blackjack.Game.Tests` | net10.0 | 50 tests over the engine. |
+| `tests/Blackjack.Server.Tests` | net10.0 | 19 tests over the money flow, using fakes. |
 | `tools/Blackjack.Console` | net10.0 | Terminal table -- plays the engine with no SPT install. |
 | `src/Blackjack.Client` | netstandard2.1 | *(not yet)* BepInEx plugin: UI and input. |
 
 `Blackjack.Game` is currency-agnostic on purpose -- it deals in `int` wagers and
 knows nothing about roubles. `Bank` in the server project is the only code that
 maps a `Wallet` to an item template.
+
+The server project is split so the interesting half is testable:
+
+- `BlackjackService` holds the whole game flow and depends only on `IBank`,
+  `IProfileGateway` and `TableStore`.
+- `BlackjackCallbacks` is a thin HTTP adapter -- serialise, log, nothing else.
+- `Bank` and `ProfileGateway` are the only classes that touch SPT services.
+
+## Testing without an SPT install
+
+SPT's `InventoryHelper`, `ProfileHelper` and `SaveServer` are concrete classes
+with non-virtual methods, so anything depending on them directly cannot be tested
+without a running server. `IBank` and `IProfileGateway` exist to break that: SPT's
+DI registers a class against every interface it implements, so the real
+implementations resolve with no extra wiring, and the tests substitute fakes.
+
+What that buys: every path that moves currency is covered without SPT present --
+stake collection, double and split top-ups, settlement, refusals, and per-currency
+isolation. `MoneyInvariantTests` plays 400 random rounds and asserts, after each
+one, that the money the service moved equals the profit the engine reported.
+
+The suite was mutation-checked: collecting the full stake instead of the increase,
+and paying out on losing hands, each fail 7 tests.
+
+What remains unverified without a server: `Bank`'s own `InventoryHelper` calls, and
+whether `scripts/smoke.ps1` resolves the session correctly.
 
 ## Engine
 
@@ -84,7 +111,7 @@ properly and is the right call if the staleness turns out to be visible.
 
 ```
 dotnet build                              # everything
-dotnet test                               # 50 engine tests
+dotnet test                               # 69 tests, no SPT needed
 dotnet run --project tools/Blackjack.Console   # play a hand in the terminal
 ```
 

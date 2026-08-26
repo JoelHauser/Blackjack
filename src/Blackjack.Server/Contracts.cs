@@ -32,6 +32,13 @@ public record BlackjackResponse
     public RoundView? Round { get; init; }
 
     /// <summary>
+    /// Set when the round proceeded but something went wrong behind it -- notably a
+    /// stake that could not be collected. The request still succeeded; the server
+    /// operator needs to know, the player does not.
+    /// </summary>
+    public string? Warning { get; init; }
+
+    /// <summary>
     /// Balance in the wallet the round is denominated in, after settlement.
     ///
     /// Sent explicitly because a custom static route does not flow through the
