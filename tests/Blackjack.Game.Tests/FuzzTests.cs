@@ -50,9 +50,9 @@ public class FuzzTests
             Assert.All(view.PlayerHands, hand => Assert.NotEqual(HandOutcome.Pending, hand.Outcome));
             Assert.All(view.PlayerHands, hand => Assert.NotEqual(HandStatus.Active, hand.Status));
 
-            // 2.5x is the ceiling: a natural. Nothing can pay more than that, and a
-            // hand that busted must return nothing at all.
-            Assert.InRange(view.TotalReturned, 0, (int)(view.TotalWagered * 2.5));
+            // Double the stake is the ceiling -- every win pays the same -- and a hand
+            // that busted must return nothing at all.
+            Assert.InRange(view.TotalReturned, 0, view.TotalWagered * 2);
             Assert.All(
                 view.PlayerHands,
                 hand => Assert.True(hand.Outcome != HandOutcome.Bust || hand.Returned == 0));

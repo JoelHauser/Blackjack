@@ -130,12 +130,15 @@ distinction does not matter to `Bank`, which walks item stacks either way, but i
 is why they cannot share one set of limits: a minimum of 1,000 is beneath notice in
 roubles and impossible in bitcoin.
 
-**Odd stakes of a valuable do not settle exactly.** Blackjack pays 3:2, so one
-bitcoin should return two and a half, and half a bitcoin does not exist. The table
-rounds up rather than down, so the player is never quietly shorted -- but it means
-an odd valuable stake pays slightly better than 3:2. `WalletInfo.SettlesExactly`
-reports this so the panel can say so before the bet is placed, rather than letting
-the player discover it.
+**Every win returns double the stake**, naturals included. That is a deliberate
+departure from casino blackjack, which pays 3:2 on a natural, and it is what makes
+valuables workable: one bitcoin at 3:2 settles on two and a half, and half a bitcoin
+does not exist. Double divides cleanly in every currency.
+
+A natural is still recorded as a `Blackjack` outcome and counted separately in the
+stats -- it is still the best hand, it just does not pay a bonus. `Rules.BlackjackPayout`
+still supports one if it is ever wanted, but setting it above 1.0 brings the
+fractional problem back for valuables.
 
 Bet limits live in `WalletInfo`, not `Rules`. The engine has no concept of a
 currency -- it takes an int -- so `TableStore` builds tables with deliberately wide
@@ -230,7 +233,8 @@ penetration, table limits.
 
 These are the ones implementations usually get wrong:
 
-- A 21 assembled after a split is **not** a natural and pays even money, not 3:2.
+- A 21 assembled after a split is **not** a natural. It pays the same here either
+  way, but the distinction still governs whether it counts as a blackjack.
 - The dealer peeks, so a player never doubles or splits into a hand already lost.
 - A player who busts loses immediately -- the dealer does not draw, even if it
   would also have busted. This is where the house edge actually comes from.

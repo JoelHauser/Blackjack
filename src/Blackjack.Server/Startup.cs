@@ -25,7 +25,7 @@ public class Startup(BlackjackLog log, StatsStore stats) : IOnLoad
         log.Info("routes: POST /blackjack/ping, /deal, /action, /state, /stats");
         log.Info(
             $"table: {rules.DeckCount} decks, dealer {(rules.DealerHitsSoft17 ? "hits" : "stands on")} soft 17, "
-            + $"blackjack pays {rules.BlackjackPayout}:1, limits {rules.MinBet:N0}-{rules.MaxBet:N0}");
+            + $"a win returns {1 + rules.BlackjackPayout}x the stake");
 
         if (log.Verbose)
         {

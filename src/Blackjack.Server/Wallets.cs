@@ -71,13 +71,9 @@ public sealed record WalletInfo(
     public static IEnumerable<WalletInfo> OfKind(WalletKind kind) => Table.Values.Where(w => w.Kind == kind);
 
     /// <summary>
-    /// Whether a natural on this wager pays a whole number of units.
-    ///
-    /// Blackjack pays 3:2, so an odd stake of an indivisible thing settles on a half
-    /// piece that cannot exist. One bitcoin should return two and a half. The table
-    /// rounds that up rather than down, so the player is never quietly shorted -- but
-    /// it means an odd valuable stake pays slightly better than 3:2, and the panel
-    /// should say so rather than letting them discover it.
+    /// Every win pays double the stake, so any whole number of units settles on a
+    /// whole number of units. There is no fractional case left to warn about --
+    /// restoring a 3:2 payout in Rules would bring one back.
     /// </summary>
-    public bool SettlesExactly(int wager) => Kind == WalletKind.Currency || wager % 2 == 0;
+    public int Returns(int wager) => wager * 2;
 }

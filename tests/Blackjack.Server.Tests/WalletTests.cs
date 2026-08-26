@@ -94,45 +94,34 @@ public class WalletTests
         Assert.Equal([(Wallet.Bitcoin, 1)], _bank.Debits);
     }
 
-    [Fact]
-    public async Task AnOddValuableStakeRoundsTheNaturalUpRatherThanShortingThePlayer()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(7)]
+    public async Task AnyWholeNumberOfValuablesPaysBackAWholeNumber(int wager)
     {
-        // One bitcoin at 3:2 settles on two and a half, which cannot exist. Rounding
-        // down would quietly turn a natural into even money.
+        // Even money is what makes valuables workable at all. A 3:2 payout would
+        // settle an odd bitcoin stake on half a coin, which cannot exist.
         var service = WithDeal("AS 9H KH 7D");
-        _bank.SetBalance(Wallet.Bitcoin, 5);
+        _bank.SetBalance(Wallet.GpCoins, 50);
 
         var response = await service.DealAsync(
-            new DealRequest { Wager = 1, Wallet = nameof(Wallet.Bitcoin) },
+            new DealRequest { Wager = wager, Wallet = nameof(Wallet.GpCoins) },
             _session);
 
         Assert.True(response.Ok, response.Error);
-        Assert.Equal([(Wallet.Bitcoin, 3)], _bank.Credits);
-
-        // Which is exactly why the panel has to warn on odd valuable stakes.
-        Assert.False(WalletInfo.For(Wallet.Bitcoin).SettlesExactly(1));
-        Assert.True(WalletInfo.For(Wallet.Bitcoin).SettlesExactly(2));
+        Assert.Equal([(Wallet.GpCoins, wager * 2)], _bank.Credits);
+        Assert.Equal(wager * 2, WalletInfo.For(Wallet.GpCoins).Returns(wager));
     }
 
     [Fact]
-    public async Task AnEvenValuableStakePaysExactlyThreeToTwo()
+    public async Task ASingleBitcoinWinReturnsTwo()
     {
         var service = WithDeal("AS 9H KH 7D");
         _bank.SetBalance(Wallet.Bitcoin, 5);
 
-        var response = await service.DealAsync(
-            new DealRequest { Wager = 2, Wallet = nameof(Wallet.Bitcoin) },
-            _session);
+        await service.DealAsync(new DealRequest { Wager = 1, Wallet = nameof(Wallet.Bitcoin) }, _session);
 
-        // 2 staked, 5 back: the stake plus 3 profit. No rounding involved.
-        Assert.Equal([(Wallet.Bitcoin, 5)], _bank.Credits);
-    }
-
-    [Fact]
-    public void CurrencyStakesNeverNeedTheWarning()
-    {
-        // Roubles round within a unit nobody can see, so an odd stake is not a problem.
-        Assert.True(WalletInfo.For(Wallet.Roubles).SettlesExactly(10_001));
-        Assert.True(WalletInfo.For(Wallet.Dollars).SettlesExactly(333));
+        Assert.Equal([(Wallet.Bitcoin, 2)], _bank.Credits);
     }
 }

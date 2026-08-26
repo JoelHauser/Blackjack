@@ -12,8 +12,15 @@ public sealed record Rules
     /// <summary>When true the dealer draws to soft 17 instead of standing.</summary>
     public bool DealerHitsSoft17 { get; init; }
 
-    /// <summary>Profit multiplier on a natural. 1.5 is 3:2; 1.2 is the stingy 6:5.</summary>
-    public double BlackjackPayout { get; init; } = 1.5;
+    /// <summary>
+    /// Profit multiplier on a natural. 1.0 means every win pays the same -- double
+    /// the stake back -- which is the rule this table runs.
+    ///
+    /// Casino blackjack pays 3:2 (1.5). Setting that back reintroduces a problem for
+    /// valuables: one bitcoin at 3:2 settles on two and a half, and half a bitcoin
+    /// does not exist. Even money divides cleanly in every currency.
+    /// </summary>
+    public double BlackjackPayout { get; init; } = 1.0;
 
     public bool DoubleAfterSplit { get; init; } = true;
 
