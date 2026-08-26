@@ -7,16 +7,8 @@ using SPTarkov.Server.Core.Models.Eft.Common;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 using SPTarkov.Server.Core.Models.Eft.Inventory;
 using SPTarkov.Server.Core.Models.Eft.ItemEvent;
-using SPTarkov.Server.Core.Models.Enums;
 
 namespace Blackjack.Server;
-
-public enum Wallet
-{
-    Roubles,
-    Dollars,
-    Euros,
-}
 
 /// <summary>
 /// Moves currency in and out of the player's stash.
@@ -40,13 +32,7 @@ public class Bank(
     BlackjackLog log)
     : IBank
 {
-    public static MongoId TplFor(Wallet wallet) => wallet switch
-    {
-        Wallet.Roubles => Money.ROUBLES,
-        Wallet.Dollars => Money.DOLLARS,
-        Wallet.Euros => Money.EUROS,
-        _ => throw new ArgumentOutOfRangeException(nameof(wallet), wallet, "Unknown wallet."),
-    };
+    public static MongoId TplFor(Wallet wallet) => WalletInfo.For(wallet).Tpl;
 
     /// <summary>
     /// Total of every stack of this currency the profile holds. Counts money in

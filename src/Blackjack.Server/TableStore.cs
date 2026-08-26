@@ -39,7 +39,14 @@ public class TableStore
     public PlayerSession For(MongoId sessionId) =>
         _sessions.GetOrAdd(
             sessionId.ToString(),
-            _ => new PlayerSession { Table = new BlackjackTable(new Rules()) });
+            _ => new PlayerSession { Table = new BlackjackTable(TableRules) });
+
+    /// <summary>
+    /// Bet limits are deliberately wide here. They are enforced per-wallet by
+    /// BlackjackService, and a bitcoin ceiling of 10 would be rejected outright by an
+    /// engine minimum written for roubles.
+    /// </summary>
+    private static Rules TableRules => new() { MinBet = 1, MaxBet = int.MaxValue };
 
     /// <summary>
     /// Test seam: install a table with a known shoe, so a test can pin the deal.

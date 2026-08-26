@@ -103,6 +103,44 @@ starts, because the wager locks the currency in for that round.
 Still undecided: whether the result reads in the strip above the buttons or as an
 overlay across the felt.
 
+## What can be staked
+
+Two kinds of thing, and the table does not treat them alike.
+
+**Currency** -- roubles, dollars, euros. Held in thousands, staked in thousands.
+The player thinks in amounts, so bets move by a step.
+
+| Wallet | Min | Max | Step |
+| --- | --- | --- | --- |
+| Roubles | 1,000 | 500,000 | 1,000 |
+| Dollars | 10 | 5,000 | 10 |
+| Euros | 10 | 5,000 | 10 |
+
+**Valuables** -- GP coins, bitcoin, Lega medals. Held in single figures and staked
+by the piece, so the player thinks in counts.
+
+| Wallet | Min | Max |
+| --- | --- | --- |
+| GP coins | 1 | 50 |
+| Bitcoin | 1 | 10 |
+| Lega medals | 1 | 5 |
+
+SPT classes GP coins as money; bitcoin and Lega medals are barter items. That
+distinction does not matter to `Bank`, which walks item stacks either way, but it
+is why they cannot share one set of limits: a minimum of 1,000 is beneath notice in
+roubles and impossible in bitcoin.
+
+**Odd stakes of a valuable do not settle exactly.** Blackjack pays 3:2, so one
+bitcoin should return two and a half, and half a bitcoin does not exist. The table
+rounds up rather than down, so the player is never quietly shorted -- but it means
+an odd valuable stake pays slightly better than 3:2. `WalletInfo.SettlesExactly`
+reports this so the panel can say so before the bet is placed, rather than letting
+the player discover it.
+
+Bet limits live in `WalletInfo`, not `Rules`. The engine has no concept of a
+currency -- it takes an int -- so `TableStore` builds tables with deliberately wide
+engine limits and the per-wallet ones govern.
+
 ## Stats
 
 Every settled round is folded into a per-profile record: rounds and hands played,

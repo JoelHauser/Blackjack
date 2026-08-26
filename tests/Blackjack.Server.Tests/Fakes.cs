@@ -11,12 +11,13 @@ namespace Blackjack.Server.Tests;
 /// </summary>
 internal sealed class FakeBank : IBank
 {
-    private readonly Dictionary<Wallet, int> _balances = new()
-    {
-        [Wallet.Roubles] = 1_000_000,
-        [Wallet.Dollars] = 10_000,
-        [Wallet.Euros] = 10_000,
-    };
+    private readonly Dictionary<Wallet, int> _balances =
+        Enum.GetValues<Wallet>().ToDictionary(w => w, w => w switch
+        {
+            Wallet.Roubles => 1_000_000,
+            Wallet.Dollars or Wallet.Euros => 10_000,
+            _ => 0,
+        });
 
     internal List<(Wallet Wallet, int Amount)> Debits { get; } = [];
 

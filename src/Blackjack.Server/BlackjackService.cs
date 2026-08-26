@@ -28,7 +28,6 @@ public class BlackjackService(IBank bank, IProfileGateway profiles, TableStore t
         }
 
         var session = tables.For(sessionId);
-        var rules = session.Table.Rules;
 
         if (session.Table.Phase == RoundPhase.PlayerTurn)
         {
@@ -37,9 +36,11 @@ public class BlackjackService(IBank bank, IProfileGateway profiles, TableStore t
 
         // Validate the stake before taking it. Letting Deal throw after the debit
         // would pocket the money and leave no hand to win it back with.
-        if (request.Wager < rules.MinBet || request.Wager > rules.MaxBet)
+        var limits = WalletInfo.For(wallet);
+        if (request.Wager < limits.MinBet || request.Wager > limits.MaxBet)
         {
-            return BlackjackResponse.Failed($"Wager must be between {rules.MinBet} and {rules.MaxBet}.");
+            return BlackjackResponse.Failed(
+                $"{limits.Label} bets run from {limits.MinBet:N0} to {limits.MaxBet:N0}.");
         }
 
         if (!bank.TryDebit(sessionId, wallet, request.Wager))
