@@ -141,6 +141,22 @@ Bet limits live in `WalletInfo`, not `Rules`. The engine has no concept of a
 currency -- it takes an int -- so `TableStore` builds tables with deliberately wide
 engine limits and the per-wallet ones govern.
 
+## Unsettled stakes
+
+The table lives in memory; the stake does not. A stake is debited from the profile
+and written to disk the moment a hand is dealt, so a crash or restart mid-round
+would take the player's money and leave no hand to win it back with.
+
+`EscrowStore` records every stake from the deal until settlement, in the mod's own
+folder. Anything found outstanding is refunded the next time that player is seen --
+lazily, on their next request, rather than at boot, which avoids touching profiles
+before the server has finished loading them. A round still in progress is left
+alone; only an orphaned stake is refundable.
+
+This also covers valuables staked through EFT's grid. Betting those means the items
+genuinely move into a container, so there is a window where they are neither in the
+stash nor won or lost, with exactly the same failure mode.
+
 ## Stats
 
 Every settled round is folded into a per-profile record: rounds and hands played,

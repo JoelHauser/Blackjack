@@ -9,6 +9,7 @@ public class WalletTests
     private readonly FakeBank _bank = new();
     private readonly FakeProfiles _profiles = new();
     private readonly FakeStats _stats = new();
+    private readonly FakeEscrow _escrow = new();
     private readonly TableStore _tables = new();
 
     private BlackjackService WithDeal(string cards)
@@ -17,7 +18,7 @@ public class WalletTests
             new Rules { MinBet = 1, MaxBet = int.MaxValue },
             Shoe.Stacked(cards.Split(' ').Select(Card.Parse))));
 
-        return new BlackjackService(_bank, _profiles, _tables, _stats);
+        return new BlackjackService(_bank, _profiles, _tables, _stats, _escrow);
     }
 
     [Fact]

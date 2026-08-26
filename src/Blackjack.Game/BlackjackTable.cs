@@ -354,7 +354,9 @@ public sealed class BlackjackTable
 
     private HandView DealerView(bool reveal)
     {
-        if (reveal)
+        // Before the first deal there is no dealer hand to describe. The client asks
+        // for state the moment the panel opens, so this path is hit on every visit.
+        if (reveal || _dealer.Cards.Count == 0)
         {
             return ToView(_dealer);
         }

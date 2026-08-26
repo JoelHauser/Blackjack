@@ -13,7 +13,12 @@ namespace Blackjack.Server;
 /// present. HTTP and logging live in <see cref="BlackjackCallbacks"/>.
 /// </summary>
 [Injectable]
-public class BlackjackService(IBank bank, IProfileGateway profiles, TableStore tables, IStatsStore stats)
+public class BlackjackService(
+    IBank bank,
+    IProfileGateway profiles,
+    TableStore tables,
+    IStatsStore stats,
+    IEscrowStore escrow)
 {
     public async Task<BlackjackResponse> DealAsync(DealRequest request, MongoId sessionId)
     {
@@ -26,6 +31,8 @@ public class BlackjackService(IBank bank, IProfileGateway profiles, TableStore t
         {
             return BlackjackResponse.Failed($"Unknown currency '{request.Wallet}'.");
         }
+
+        RefundAbandonedStake(sessionId);
 
         var session = tables.For(sessionId);
 
@@ -48,6 +55,10 @@ public class BlackjackService(IBank bank, IProfileGateway profiles, TableStore t
             return BlackjackResponse.Failed(
                 $"Not enough {wallet} -- you have {bank.GetBalance(sessionId, wallet)}.");
         }
+
+        // Recorded before the hand is dealt: from here until settlement the money is
+        // off the profile, and only this makes it recoverable.
+        escrow.Hold(sessionId, wallet, request.Wager);
 
         session.Wallet = wallet;
         var view = session.Table.Deal(request.Wager);
@@ -112,7 +123,11 @@ public class BlackjackService(IBank bank, IProfileGateway profiles, TableStore t
 
         string? warning = null;
         var owed = view.TotalWagered - session.Staked;
-        if (owed > 0 && !bank.TryDebit(sessionId, session.Wallet, owed))
+        if (owed > 0 && bank.TryDebit(sessionId, session.Wallet, owed))
+        {
+            escrow.Hold(sessionId, session.Wallet, owed);
+        }
+        else if (owed > 0)
         {
             // Pre-checked above, so reaching here means the profile changed
             // underneath us. The adapter logs it: the player is now playing a
@@ -154,8 +169,40 @@ public class BlackjackService(IBank bank, IProfileGateway profiles, TableStore t
             return BlackjackResponse.Failed("No PMC profile for this session.");
         }
 
+        RefundAbandonedStake(sessionId);
+
         var session = tables.For(sessionId);
         return Success(session.Table.View(), sessionId, session);
+    }
+
+    /// <summary>
+    /// Hands back a stake whose round no longer exists.
+    ///
+    /// The table lives in memory and the stake does not, so a restart between the deal
+    /// and the settlement leaves money owed with no hand attached to it. Refunding
+    /// lazily, on next contact, avoids having to touch profiles at boot before the
+    /// server has finished loading them.
+    /// </summary>
+    private void RefundAbandonedStake(MongoId sessionId)
+    {
+        var owed = escrow.Get(sessionId);
+        if (owed is null)
+        {
+            return;
+        }
+
+        // A live round still owns its stake -- only an orphaned one is refundable.
+        if (tables.Has(sessionId) && tables.For(sessionId).Table.Phase == RoundPhase.PlayerTurn)
+        {
+            return;
+        }
+
+        if (Enum.TryParse<Wallet>(owed.Wallet, ignoreCase: true, out var wallet))
+        {
+            bank.Credit(sessionId, wallet, owed.Amount);
+        }
+
+        escrow.Release(sessionId);
     }
 
     private void Settle(PlayerSession session, RoundView view, MongoId sessionId)
@@ -174,6 +221,8 @@ public class BlackjackService(IBank bank, IProfileGateway profiles, TableStore t
         record.Record(view, session.Wallet, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
         stats.Save(sessionId, record);
 
+        // The round is over, so nothing is owed back any more.
+        escrow.Release(sessionId);
         session.Staked = 0;
     }
 

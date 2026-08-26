@@ -73,4 +73,18 @@ public class DealerTests
         Assert.Equal(11, dealt.Dealer.Value);
         Assert.True(dealt.Dealer.IsSoft);
     }
+
+    [Fact]
+    public void AFreshTableCanBeViewedBeforeAnythingIsDealt()
+    {
+        // The client asks for state as soon as the panel opens, before any bet. An
+        // empty dealer hand must describe itself rather than reaching for a card.
+        var view = Deal.Table("KS KH 9D 7C").View();
+
+        Assert.Equal(RoundPhase.AwaitingBet, view.Phase);
+        Assert.Empty(view.Dealer.Cards);
+        Assert.Equal(0, view.Dealer.Value);
+        Assert.Empty(view.PlayerHands);
+        Assert.Empty(view.AvailableActions);
+    }
 }

@@ -93,3 +93,30 @@ internal sealed class FakeStats : IStatsStore
         Saves++;
     }
 }
+
+internal sealed class FakeEscrow : IEscrowStore
+{
+    private readonly Dictionary<string, OutstandingStake> _held = [];
+
+    public OutstandingStake? Get(MongoId sessionId) =>
+        _held.TryGetValue(sessionId.ToString(), out var s) ? s : null;
+
+    public void Hold(MongoId sessionId, Wallet wallet, int amount)
+    {
+        if (amount <= 0)
+        {
+            return;
+        }
+
+        var key = sessionId.ToString();
+        if (_held.TryGetValue(key, out var existing))
+        {
+            existing.Amount += amount;
+            return;
+        }
+
+        _held[key] = new OutstandingStake { Wallet = wallet.ToString(), Amount = amount };
+    }
+
+    public void Release(MongoId sessionId) => _held.Remove(sessionId.ToString());
+}

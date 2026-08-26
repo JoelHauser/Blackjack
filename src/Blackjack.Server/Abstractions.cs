@@ -42,3 +42,16 @@ public interface IStatsStore
 
     void Save(MongoId sessionId, PlayerStats stats);
 }
+
+/// <summary>
+/// Money taken from a player whose round has not settled. See <see cref="EscrowStore"/>
+/// for why an in-memory table makes this necessary.
+/// </summary>
+public interface IEscrowStore
+{
+    OutstandingStake? Get(MongoId sessionId);
+
+    void Hold(MongoId sessionId, Wallet wallet, int amount);
+
+    void Release(MongoId sessionId);
+}

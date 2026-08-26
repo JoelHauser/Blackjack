@@ -59,6 +59,12 @@ public class TableStore
         return session;
     }
 
+    /// <summary>
+    /// Whether this player already has a seat. Distinguishes "no round" from "round
+    /// in progress" without creating one as a side effect, which For() would.
+    /// </summary>
+    public bool Has(MongoId sessionId) => _sessions.ContainsKey(sessionId.ToString());
+
     /// <summary>Drops a seat, abandoning any in-progress round.</summary>
     public void Clear(MongoId sessionId) => _sessions.TryRemove(sessionId.ToString(), out _);
 }
