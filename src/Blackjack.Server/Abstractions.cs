@@ -1,4 +1,4 @@
-using SPTarkov.Server.Core.Models.Common;
+﻿using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.ItemEvent;
 
 namespace Blackjack.Server;
@@ -29,6 +29,12 @@ public interface IBank
     bool TryDebit(MongoId sessionId, Wallet wallet, int amount, ItemEventRouterResponse output);
 
     void Credit(MongoId sessionId, Wallet wallet, int amount, ItemEventRouterResponse output);
+
+    /// <summary>
+    /// The running server's stack limit for a wallet, which item mods change. Exposed
+    /// so startup can report what is actually in force rather than what is assumed.
+    /// </summary>
+    int MaxStackSize(Wallet wallet);
 }
 
 public interface IProfileGateway

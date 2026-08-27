@@ -41,6 +41,42 @@ public class Bank(
     /// </summary>
     private const long MailStorageSeconds = 90L * 24 * 60 * 60;
 
+    /// <summary>
+    /// How many of an item may sit in one stack, as the running server sees it.
+    ///
+    /// Read live, never assumed. The base database says roubles stack to 1,000,000
+    /// and that bitcoin and Lega medals do not stack at all; BarterItemsStacks raises
+    /// those to 20,000,000 and 20. Both are correct, on different servers, so the only
+    /// safe source is the database in front of us.
+    ///
+    /// Clamped to at least one. A limit of zero -- which a careless item mod can
+    /// produce -- would make the splitting loops take zero each pass and never
+    /// terminate, hanging a server thread rather than failing.
+    /// </summary>
+    public int MaxStackSize(Wallet wallet) => MaxStackSize(wallet, int.MaxValue);
+
+    private int MaxStackSize(Wallet wallet, int fallback)
+    {
+        var declared = itemHelper.GetItem(TplFor(wallet)).Value?.Properties?.StackMaxSize;
+
+        if (declared is null)
+        {
+            // No limit published: treat the whole amount as one stack, which is what
+            // this did before, rather than inventing a number.
+            return Math.Max(1, fallback);
+        }
+
+        if (declared < 1)
+        {
+            log.Error(
+                $"{wallet} reports a maximum stack of {declared}, which cannot be honoured. "
+                + "Treating it as 1 -- an item mod has set something impossible.");
+            return 1;
+        }
+
+        return (int)declared;
+    }
+
     public static MongoId TplFor(Wallet wallet) => WalletInfo.For(wallet).Tpl;
 
     /// <summary>
@@ -152,13 +188,8 @@ public class Bank(
         var before = GetBalance(sessionId, wallet);
 
         // One oversized stack would be rejected by the client, so the payout is split
-        // before it is handed over. The limits are worth knowing: roubles stack to
-        // 1,000,000 and dollars and euros to 50,000, but bitcoin and Lega medals have
-        // a StackMaxSize of 1 and do not stack at all -- a ten-bitcoin win is ten
-        // separate items needing ten free grid cells, which is the most likely way a
-        // payout runs out of room. Read from the database rather than assumed, because
-        // an item mod can change any of them.
-        var maxStack = itemHelper.GetItem(tpl).Value?.Properties?.StackMaxSize ?? amount;
+        // before it is handed over.
+        var maxStack = MaxStackSize(wallet, amount);
         var remaining = amount;
         var stacksMade = 0;
 
@@ -224,7 +255,7 @@ public class Bank(
     private void PayByMail(MongoId sessionId, Wallet wallet, int amount)
     {
         var tpl = TplFor(wallet);
-        var maxStack = itemHelper.GetItem(tpl).Value?.Properties?.StackMaxSize ?? amount;
+        var maxStack = MaxStackSize(wallet, amount);
         var items = new List<Item>();
         var remaining = amount;
 

@@ -18,8 +18,35 @@ public class BlackjackCallbacks(
     HttpResponseUtil httpResponseUtil,
     BlackjackService service,
     EventOutputHolder eventOutputHolder,
+    IBank bank,
     BlackjackLog log)
 {
+    private static int _limitsReported;
+
+    /// <summary>
+    /// Prints the stack limits actually in force, once per server run.
+    ///
+    /// Deliberately not done at startup. Item mods that rewrite stack sizes can run
+    /// after every OnLoad stage this mod can register for -- BarterItemsStacks lands
+    /// about half a second after PostLoad + 1 -- so a number read at boot is the base
+    /// database value, and printing it would be confidently wrong. By the time a
+    /// request arrives the database has settled.
+    ///
+    /// Worth printing at all because payouts are split by these, and a limit of 1
+    /// means one item per unit: a twenty-coin win needs twenty free grid cells.
+    /// </summary>
+    private void ReportStackLimitsOnce()
+    {
+        if (Interlocked.Exchange(ref _limitsReported, 1) != 0)
+        {
+            return;
+        }
+
+        log.Info(
+            "stack limits in force: "
+            + string.Join(", ", WalletInfo.All.Select(w => $"{w.Label} {bank.MaxStackSize(w.Wallet):N0}")));
+    }
+
     /// <summary>
     /// A response object SPT's own inventory helpers can write into.
     ///
@@ -63,6 +90,8 @@ public class BlackjackCallbacks(
     public ValueTask<string> Ping(PingRequest info, MongoId sessionId)
     {
         var response = service.Ping(sessionId);
+
+        ReportStackLimitsOnce();
 
         // Always logged, never gated on verbose: this is the line that tells you
         // whether the mod is reachable and whether the session resolved at all.

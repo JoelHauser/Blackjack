@@ -1,4 +1,4 @@
-using Blackjack.Server;
+﻿using Blackjack.Server;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.ItemEvent;
 
@@ -19,6 +19,9 @@ internal sealed class FakeBank : IBank
             Wallet.Dollars or Wallet.Euros => 10_000,
             _ => 0,
         });
+
+    /// <summary>No stack limit in the fakes -- splitting is the real Bank's problem.</summary>
+    public int MaxStackSize(Wallet wallet) => int.MaxValue;
 
     internal List<(Wallet Wallet, int Amount)> Debits { get; } = [];
 
