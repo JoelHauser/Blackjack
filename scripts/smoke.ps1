@@ -26,6 +26,16 @@
 .PARAMETER PingOnly
     Stop after the health check without betting anything.
 
+.PARAMETER Play
+    The action to take on the first decision. Everything after it stands, since the
+    point is to exercise one path rather than to play well. Double and Split are only
+    legal on some hands -- see -DealUntilPlayable.
+
+.PARAMETER DealUntilPlayable
+    How many rounds to deal looking for one where -Play is legal. A pair turns up
+    roughly one hand in thirteen, so hunting for a Split needs a few dozen. Each
+    attempt stakes real money; keep -Wager at the minimum while hunting.
+
 .EXAMPLE
     .\smoke.ps1 -SessionId 66e4a1b2c3d4e5f6a7b8c9d0 -PingOnly
 
@@ -37,6 +47,8 @@ param(
     [string]$Server = "https://127.0.0.1:6969",
     [ValidateSet("Roubles", "Dollars", "Euros")][string]$Wallet = "Roubles",
     [int]$Wager = 10000,
+    [ValidateSet("Stand", "Hit", "Double", "Split")][string]$Play = "Stand",
+    [int]$DealUntilPlayable = 1,
     [switch]$PingOnly
 )
 
@@ -178,7 +190,7 @@ if ($PingOnly) {
 # ---- play a round -----------------------------------------------------------
 
 Write-Host ""
-Write-Host "Dealing $Wager $Wallet" -ForegroundColor Cyan
+Write-Host "Dealing $Wager $Wallet, aiming to $Play" -ForegroundColor Cyan
 # PascalCase deliberately. SPT deserialises request bodies case-sensitively, so
 # lowercase keys bind nothing and every property silently takes its default -- which
 # for DealRequest means wager 0, refused as "bets run from 1,000 to 500,000" while
@@ -186,8 +198,42 @@ Write-Host "Dealing $Wager $Wallet" -ForegroundColor Cyan
 $state = Invoke-Blackjack -Route "/blackjack/deal" -Body @{ Wallet = $Wallet; Wager = $Wager }
 Show-Round $state
 
-# Stand immediately -- the point is proving the round settles and the money moves,
-# not playing well.
+# Hunt for a hand where the requested action is legal. Double needs a two-card hand
+# and Split needs a pair, so neither is reachable by dealing once and hoping.
+$attempt = 1
+while ($state.ok -and $Play -ne "Stand" -and $attempt -lt $DealUntilPlayable) {
+    $legal = @($state.round.availableActions | ForEach-Object { ConvertTo-EnumName $_ $PlayerActionNames })
+    if ($legal -contains $Play) { break }
+
+    # Not this hand. Stand it off and deal another.
+    while ((ConvertTo-EnumName $state.round.phase $RoundPhaseNames) -eq "PlayerTurn") {
+        $state = Invoke-Blackjack -Route "/blackjack/action" -Body @{ Action = "Stand" }
+    }
+
+    $attempt++
+    $state = Invoke-Blackjack -Route "/blackjack/deal" -Body @{ Wallet = $Wallet; Wager = $Wager }
+    if (-not $state.ok) {
+        Write-Host "  refused on attempt ${attempt}: $($state.error)" -ForegroundColor Yellow
+        break
+    }
+}
+
+if ($Play -ne "Stand") {
+    $legal = @($state.round.availableActions | ForEach-Object { ConvertTo-EnumName $_ $PlayerActionNames })
+    if ($legal -contains $Play) {
+        Write-Host "  $Play is legal on attempt $attempt" -ForegroundColor Green
+        Show-Round $state
+        Write-Host "$Play..." -ForegroundColor Cyan
+        $state = Invoke-Blackjack -Route "/blackjack/action" -Body @{ Action = $Play }
+        Show-Round $state
+    }
+    else {
+        Write-Host "  $Play never came up in $attempt hand(s) -- standing instead." -ForegroundColor Yellow
+    }
+}
+
+# Whatever happened above, play the round out. Standing is enough: the point is that
+# it settles and the money matches, not that it is played well.
 while ($state.ok -and (ConvertTo-EnumName $state.round.phase $RoundPhaseNames) -eq "PlayerTurn") {
     Write-Host "Standing..." -ForegroundColor Cyan
     $state = Invoke-Blackjack -Route "/blackjack/action" -Body @{ Action = "Stand" }

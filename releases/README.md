@@ -4,7 +4,8 @@ Packaged builds, laid out so the zip extracts straight into an SPT install.
 
 | Version | Built for | Layout | Notes |
 | --- | --- | --- | --- |
-| 0.1.0 | SPT 4.1.3 | `SPT_Runtime/user/mods/Blackjack/` | Server only -- no client plugin, so nothing to play in game yet. |
+| 0.2.0 | SPT 4.1.3 | `SPT_Runtime/user/mods/Blackjack/` | First build proven against a real server. Server only -- no client plugin, so nothing to play in game yet. |
+| 0.1.0 | SPT 4.1.3 | `user/mods/Blackjack/` | Superseded. Wrong layout, and three money-path bugs -- do not install. |
 
 ## The layout matters
 

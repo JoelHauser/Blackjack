@@ -30,7 +30,7 @@ are .NET 10 class libraries referencing `SPTarkov.Server.Core`, with an
 | `tests/Blackjack.Game.Tests` | 52 tests over the engine. |
 | `tests/Blackjack.Server.Tests` | 51 tests over the money flow, on fakes. |
 | `tools/Blackjack.Console` | Terminal table. Plays the engine with no SPT install. |
-| `scripts/smoke.ps1` | Drives a real server over HTTP. Needs SPT; untested. |
+| `scripts/smoke.ps1` | Drives a real server over HTTP. Verified; `-Play` picks the action to exercise. |
 
 The engine knows nothing about currency -- it takes an `int` and returns an `int`.
 Everything that maps a `Wallet` to an item template lives in `Wallets.cs` and
@@ -292,10 +292,14 @@ now, deliberately, because nothing has run for real yet.
   took 25,000, each landing on the exact expected balance, with escrow empty and stats
   written afterwards. `Bank.Debit`, `Bank.Credit`, escrow and settlement have all now
   run for real.
+- **Split and double both work.** A doubled hand took its second stake and pushed,
+  returning exactly the doubled amount; a split took a second stake, settled two
+  hands independently and paid both. Every balance landed on the arithmetic.
 - **Untested still:** valuables (bitcoin and Lega are at zero in the test profile),
-  the full-stash shortfall-to-mail path, a restart mid-round, split and double, and
-  the item-event transport -- everything so far went through the static routes.
-- `releases/Blackjack-0.1.0.zip` is built and committed.
+  the full-stash shortfall-to-mail path, a restart mid-round, and the item-event
+  transport -- everything so far went through the static routes.
+- `releases/Blackjack-0.2.0-SPT4.1.zip` is the current build. 0.1.0 is superseded --
+  wrong layout and three money-path bugs -- and was removed rather than kept.
 
 ### Testing on Joel's box
 
