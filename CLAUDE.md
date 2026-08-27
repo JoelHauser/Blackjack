@@ -214,14 +214,38 @@ Two transports, one service. Do not put game logic in either adapter.
 
 ## Decisions already made
 
-- **Rest Space interactable, not a new hideout area.** `HideoutAreas` ends at
-  `CircleOfCultists = 27` and the client has a matching enum plus a baked prefab
-  per area. A new value has no model and the client does not know it exists.
+- **Not a new hideout area.** Confirmed against the client: `EFT.EAreaType` ends at
+  `CircleOfCultists = 27`, and each area has a baked prefab. A new value has no model
+  and the client does not know it exists.
+- **Not the Rest Space either -- reversed on 2026-08-27.** The table is reached from
+  a button this mod adds to the main menu, and works on a fresh profile.
+
+  The Rest Space was the original plan, and EFT turns out to have a whole game-disc
+  system sitting in it -- `RestSpaceBehaviour` with `CanAcceptGameDisc`, `StartGame`,
+  `ShowGameScreen` and `FocusGameZoneCamera`, plus a `RestSpaceGamePanel` with a play
+  button, and a `DialogItem` node (`684070bd2f743ae53b0b80ec`) holding four disc
+  items. It would have solved the camera and cursor problems for free.
+
+  It is gated too hard to be the only way in. Rest Space level 1 is nearly free
+  (10,000 roubles, duct tape, matches, Vents 1, instant), but the disc player is
+  level 2: 75,000 roubles, a DVD drive, a magnet, two lamps, Generator 1, an hour to
+  build -- and the area is `needsFuel`, with `CanPlayGame` gated on the generator
+  actually running. That locks a new profile out of the mod entirely.
+
+  The disc route stays on the table as an optional second entrance later, for players
+  who have the area built. It is flavour, not the front door.
+- **The entry point is a button on `EFT.UI.MenuScreen`**, cloned from one of the
+  `DefaultUIButton` fields already there (`_hideoutButton`, `_playButton`,
+  `_tradeButton`, ...). `Awake` and `Show` are the patch points.
+- **Guarding against play-in-raid is now this mod's job.** The old design got that for
+  free, since the Rest Space does not exist on a raid map. A main-menu button is not
+  reachable mid-raid either, but nothing enforces that any more -- so whatever opens
+  the panel must check, rather than relying on where it was placed.
 - **The panel floats over a dimmed hideout**, not a fullscreen takeover. This makes
   freeing the cursor and swallowing player input a hard requirement. Fallback if
   that proves impractical: takeover, which is how EFT presents its own area screens.
-- **No hotkey.** The table is the only way in, so the game cannot be reached in a
-  raid -- the Rest Space does not exist on a raid map.
+- **No hotkey.** A key would be reachable from anywhere, including a raid. The menu
+  button is the only way in, and it must still check rather than assume.
 - **Valuables are staked through EFT's own grid component**, dragged into a
   container. One item type per bet: a mixed stake has no coherent payout.
 - **Per-hand settlement, straight to the stash.** No session, no chips, no buy-in.
