@@ -148,14 +148,17 @@ namespace Blackjack.Client
         }
 
         /// <summary>
-        /// Swaps the borrowed icon for a spade.
+        /// Swaps the borrowed icon for a diamond.
         ///
         /// A clone wears whatever icon it copied, so without this the BLACKJACK button
         /// carries the hideout's. Blanking it is not the answer either: with a menu mod
         /// installed the icon is the button's main visual and the others would all have
-        /// one, leaving ours conspicuously bare. A spade is drawn from the same code
-        /// that draws the cards, so it needs no art shipped and looks deliberate in
-        /// both cases.
+        /// one, leaving ours conspicuously bare. A suit is drawn by the same code that
+        /// draws the cards, so it needs no art shipped and looks deliberate either way.
+        ///
+        /// The diamond specifically, because it is the only suit with no up or down. A
+        /// spade inheriting a mirrored or rotated transform from the icon it replaced
+        /// comes out looking like a trophy; a rhombus cannot.
         ///
         /// The container is left alone whatever happens, because its size is part of
         /// the row's spacing.
@@ -171,7 +174,7 @@ namespace Blackjack.Client
                 return;
             }
 
-            var spade = Textures.Suit('S', Color.white);
+            var pip = Textures.Suit('D', Color.white);
 
             foreach (var icon in icons)
             {
@@ -195,7 +198,7 @@ namespace Blackjack.Client
                     Mathf.Abs(rect.localScale.y),
                     Mathf.Abs(rect.localScale.z));
 
-                icon.sprite = spade;
+                icon.sprite = pip;
                 icon.preserveAspect = true;
             }
         }
