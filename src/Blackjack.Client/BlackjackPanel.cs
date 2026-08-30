@@ -51,6 +51,8 @@ namespace Blackjack.Client
         private static readonly List<(string Wallet, GameObject Chip)> _wallets = new List<(string, GameObject)>();
 
         private static TMP_InputField _wagerInput;
+        private static GameObject _confirm;
+        private static TextMeshProUGUI _confirmText;
 
         /// <summary>
         /// What the player holds, as of the last time the server said. Used to warn
@@ -105,6 +107,12 @@ namespace Blackjack.Client
 
         internal static void Close()
         {
+            // An unanswered question must not be waiting when the table is reopened.
+            if (_confirm != null)
+            {
+                _confirm.SetActive(false);
+            }
+
             if (_root != null)
             {
                 _root.SetActive(false);
@@ -400,6 +408,8 @@ namespace Blackjack.Client
             felt.offsetMin = new Vector2(14f, 14f);
             felt.offsetMax = new Vector2(-14f, -14f);
 
+            BuildConfirm(canvasObject.transform);
+
             BuildHeader(felt);
             BuildDealer(felt);
             BuildRules(felt);
@@ -408,6 +418,36 @@ namespace Blackjack.Client
             BuildFooter(felt);
 
             BlackjackClientPlugin.Log.LogInfo("[Blackjack] table built");
+        }
+
+        /// <summary>
+        /// The are-you-sure box. Built once and hidden, rather than made and destroyed
+        /// each time, so there is nothing to leak and nothing to rebuild mid-click.
+        ///
+        /// Its own dimmed backdrop covers the table and swallows clicks, so the answer
+        /// has to be given before anything else can be touched.
+        /// </summary>
+        private static void BuildConfirm(Transform parent)
+        {
+            var root = NewPanel("Confirm", parent, new Color(0f, 0f, 0f, 0.6f));
+            Stretch(root);
+            _confirm = root.gameObject;
+
+            var box = NewPanel("Box", root, new Color(0.10f, 0.10f, 0.11f, 0.99f));
+            box.anchorMin = box.anchorMax = new Vector2(0.5f, 0.5f);
+            box.pivot = new Vector2(0.5f, 0.5f);
+            box.sizeDelta = new Vector2(560f, 250f);
+
+            _confirmText = Label(box, "", 24f, Ink, TextAlignmentOptions.Center);
+            Anchor(_confirmText.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -80f), new Vector2(500f, 120f));
+
+            var buttons = NewRow("Buttons", box, 16f);
+            Anchor(buttons, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 44f), new Vector2(500f, 48f));
+
+            Chip(buttons, "BET IT ALL", 200f, ConfirmBetEverything);
+            Chip(buttons, "CANCEL", 160f, CancelConfirm);
+
+            _confirm.SetActive(false);
         }
 
         private static void BuildHeader(RectTransform felt)
@@ -484,7 +524,7 @@ namespace Blackjack.Client
 
             BuildWagerInput(betRow);
 
-            Chip(betRow, "ALL IN", 120f, BetEverything);
+            Chip(betRow, "ALL IN", 120f, AskBetEverything);
 
             _wagerLabel = Label(betRow, "", 20f, Faint, TextAlignmentOptions.Left);
             SetPreferredSize(_wagerLabel.rectTransform, 420f, 34f);
@@ -540,11 +580,37 @@ namespace Blackjack.Client
         }
 
         /// <summary>
-        /// Everything in the chosen wallet. Whether that is a legal bet is still the
-        /// server's call -- most wallets cap well below a full stash.
+        /// Asks before staking the lot.
+        ///
+        /// Every other control here is recoverable -- a mistyped wager is retyped, a
+        /// wrong wallet is reselected. This one is a single click that stakes
+        /// everything the player owns of something, sitting next to the field they
+        /// were already aiming at, so it gets a question first.
         /// </summary>
-        private static void BetEverything()
+        private static void AskBetEverything()
         {
+            if (!_balances.TryGetValue(_wallet, out var held) || held <= 0)
+            {
+                _message.text = $"You have no {Short(_wallet)} to bet.";
+                _message.color = Bad;
+                return;
+            }
+
+            _confirmText.text = $"Bet everything?\n\n<size=30>{held:N0}  {Short(_wallet)}</size>";
+            _confirm.SetActive(true);
+            _confirm.transform.SetAsLastSibling();
+        }
+
+        private static void CancelConfirm() => _confirm.SetActive(false);
+
+        /// <summary>
+        /// Whether all of it is a legal bet is still the server's call -- most wallets
+        /// cap well below a full stash, and it will say so by name.
+        /// </summary>
+        private static void ConfirmBetEverything()
+        {
+            _confirm.SetActive(false);
+
             if (!_balances.TryGetValue(_wallet, out var held) || held <= 0)
             {
                 return;
