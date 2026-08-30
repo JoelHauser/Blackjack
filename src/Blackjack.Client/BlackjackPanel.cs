@@ -57,7 +57,10 @@ namespace Blackjack.Client
         private static GameObject _leave;
         private static RectTransform _cloth;
         private static GameObject _statsPanel;
-        private static TextMeshProUGUI _statsText;
+        private static GameObject _statsButton;
+        private static RectTransform _statsTiles;
+        private static RectTransform _statsRows;
+        private static TextMeshProUGUI _statsEmpty;
         private static GameObject _confirm;
         private static TextMeshProUGUI _confirmText;
 
@@ -174,15 +177,7 @@ namespace Blackjack.Client
             }
 
             // The sheet must not still be lying on the table next time it is opened.
-            if (_statsPanel != null && _statsPanel.activeSelf)
-            {
-                _statsPanel.SetActive(false);
-
-                if (_cloth != null)
-                {
-                    _cloth.gameObject.SetActive(true);
-                }
-            }
+            HideStats();
 
             if (_root == null || !_root.activeSelf)
             {
@@ -272,6 +267,9 @@ namespace Blackjack.Client
                 Say($"The largest bet the table can take is {int.MaxValue:N0}.", Bad);
                 return;
             }
+
+            // A hand dealt behind the sheet would be dealt out of sight.
+            HideStats();
 
             Render(BlackjackApi.Deal(_wallet, _wager));
         }
@@ -378,6 +376,14 @@ namespace Blackjack.Client
             if (_leave != null)
             {
                 _leave.SetActive(betting);
+            }
+
+            // Stats are for between hands. Reading them mid-round would mean taking
+            // the cards off the table while a hand is still owed, which is the one
+            // moment the table should be showing the hand.
+            if (_statsButton != null)
+            {
+                _statsButton.SetActive(betting);
             }
 
             var dealer = round?["Dealer"] as JObject;
@@ -769,31 +775,65 @@ namespace Blackjack.Client
         /// legible.
         /// </summary>
         /// <summary>
-        /// The lifetime record, laid over the cloth.
+        /// The lifetime figures, laid over the cloth.
         ///
         /// On the table rather than in a window of its own, and the cards come off
-        /// while it is up. A table with a sheet of numbers lying on it is a table
-        /// between hands; a panel floating over a dealt hand would just be in the way
-        /// of it.
+        /// while it is up: a table with a sheet of numbers lying on it reads as a
+        /// table between hands, where a panel floating over a dealt hand is just in
+        /// the way of it.
+        ///
+        /// Built as tiles and rows rather than one block of text. Worn felt under a
+        /// vignette is a poor background for a paragraph, and columns of numbers only
+        /// line up if something is actually holding them in columns.
         /// </summary>
         private static void BuildStats(RectTransform felt)
         {
             var sheet = NewBox("Stats", felt, new Color(0f, 0f, 0f, 0f), 0, default, 0);
             Stretch(sheet);
+            sheet.offsetMin = new Vector2(140f, 118f);
+            sheet.offsetMax = new Vector2(-140f, -118f);
             _statsPanel = sheet.gameObject;
 
-            var title = Label(sheet, "RECORD", 22f, Gold, TextAlignmentOptions.Center);
-            Anchor(title.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -120f), new Vector2(400f, 28f));
+            // Something to read the numbers off. The felt is beautiful and completely
+            // unsuited to small text.
+            var card = NewBox("Sheet", sheet, new Color(0.06f, 0.07f, 0.07f, 0.90f), 14, new Color(1f, 1f, 1f, 0.10f), 2);
+            Stretch(card);
 
-            _statsText = Label(sheet, "", 20f, Ink, TextAlignmentOptions.Top);
-            _statsText.enableWordWrapping = false;
-            Anchor(_statsText.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -14f), new Vector2(900f, 320f));
+            var column = card.gameObject.AddComponent<VerticalLayoutGroup>();
+            column.childAlignment = TextAnchor.UpperCenter;
+            column.spacing = 12f;
+            column.padding = new RectOffset(24, 24, 18, 18);
+            column.childForceExpandWidth = false;
+            column.childForceExpandHeight = false;
+            column.childControlWidth = false;
+            column.childControlHeight = false;
+
+            SetSize(Label(card, "STATS", 22f, Gold, TextAlignmentOptions.Center).rectTransform, 700f, 26f);
+
+            _statsTiles = NewRow("Tiles", card, 10f);
+            SetSize(_statsTiles, 860f, 82f);
+
+            SetSize(NewBox("Rule", card, new Color(1f, 1f, 1f, 0.10f), 0, default, 0), 820f, 2f);
+
+            _statsRows = NewBox("Rows", card, new Color(0f, 0f, 0f, 0f), 0, default, 0);
+            SetSize(_statsRows, 860f, 150f);
+
+            var rows = _statsRows.gameObject.AddComponent<VerticalLayoutGroup>();
+            rows.childAlignment = TextAnchor.UpperCenter;
+            rows.spacing = 4f;
+            rows.childForceExpandWidth = false;
+            rows.childForceExpandHeight = false;
+            rows.childControlWidth = false;
+            rows.childControlHeight = false;
+
+            _statsEmpty = Label(card, "", 19f, Faint, TextAlignmentOptions.Center);
+            SetSize(_statsEmpty.rectTransform, 700f, 26f);
 
             _statsPanel.SetActive(false);
         }
 
         /// <summary>
-        /// Shows the record and clears the table, or puts the hand back.
+        /// Shows the figures and clears the table, or puts the hand back.
         ///
         /// The round is untouched either way -- it lives on the server, and this only
         /// decides what is drawn. Coming back asks for the state again rather than
@@ -813,7 +853,7 @@ namespace Blackjack.Client
 
             if (showing)
             {
-                _statsText.text = FormatStats(BlackjackApi.Stats());
+                Populate(BlackjackApi.Stats());
             }
             else
             {
@@ -821,11 +861,30 @@ namespace Blackjack.Client
             }
         }
 
-        private static string FormatStats(JObject stats)
+        private static void HideStats()
         {
+            if (_statsPanel != null && _statsPanel.activeSelf)
+            {
+                _statsPanel.SetActive(false);
+
+                if (_cloth != null)
+                {
+                    _cloth.gameObject.SetActive(true);
+                }
+            }
+        }
+
+        private static void Populate(JObject stats)
+        {
+            Clear(_statsTiles);
+            Clear(_statsRows);
+            _statsEmpty.text = "";
+
             if (stats == null)
             {
-                return "<color=#eb6b5c>No answer from the server.</color>";
+                _statsEmpty.text = "No answer from the server.";
+                _statsEmpty.color = Bad;
+                return;
             }
 
             int Get(string name) => stats[name]?.ToObject<int>() ?? 0;
@@ -833,47 +892,84 @@ namespace Blackjack.Client
             var rounds = Get("RoundsPlayed");
             if (rounds == 0)
             {
-                return "<color=#a9b8a4>No hands played yet.</color>";
+                _statsEmpty.text = "No hands played yet.";
+                _statsEmpty.color = Faint;
+                return;
             }
 
-            var hands = Get("HandsPlayed");
             var wins = Get("Wins");
             var losses = Get("Losses");
-            var pushes = Get("Pushes");
 
             // Pushes excluded: a hand nobody won is not a hand you lost, and counting
-            // it against the rate makes a cautious player look worse than they are.
+            // it against the rate makes a cautious player look worse than they were.
             var decided = wins + losses;
             var rate = decided > 0 ? (100.0 * wins / decided) : 0.0;
 
-            var text = new StringBuilder();
-            text.AppendLine($"<color=#a9b8a4>rounds</color>  {rounds:N0}          <color=#a9b8a4>hands</color>  {hands:N0}");
-            text.AppendLine($"<color=#a9b8a4>won</color>  {wins:N0}   <color=#a9b8a4>lost</color>  {losses:N0}   <color=#a9b8a4>pushed</color>  {pushes:N0}   <color=#a9b8a4>({rate:F0}% of those decided)</color>");
-            text.AppendLine($"<color=#a9b8a4>blackjacks</color>  {Get("Blackjacks"):N0}      <color=#a9b8a4>busts</color>  {Get("Busts"):N0}");
-            text.AppendLine($"<color=#a9b8a4>streak</color>  {Get("CurrentStreak"):N0}      <color=#a9b8a4>best</color>  {Get("BestStreak"):N0}");
-            text.AppendLine();
+            Tile(rounds.ToString("N0"), "rounds", Ink);
+            Tile(Get("HandsPlayed").ToString("N0"), "hands", Ink);
+            Tile($"{wins:N0}-{losses:N0}-{Get("Pushes"):N0}", "w-l-p", Ink);
+            Tile($"{rate:F0}%", "of decided", decided == 0 ? Faint : (rate >= 50.0 ? Good : Bad));
+            Tile(Get("Blackjacks").ToString("N0"), "blackjacks", Gold);
+            Tile(Get("Busts").ToString("N0"), "busts", Ink);
+            Tile($"{Get("CurrentStreak"):N0} / {Get("BestStreak"):N0}", "streak / best", Ink);
 
             var byCurrency = stats["ByCurrency"] as JObject;
             if (byCurrency == null || !byCurrency.HasValues)
             {
-                return text.ToString();
+                _statsEmpty.text = "Nothing staked yet.";
+                _statsEmpty.color = Faint;
+                return;
             }
+
+            MoneyRow("", "staked", "returned", "net", Faint, 17f);
 
             foreach (var entry in byCurrency.Properties())
             {
-                var w = entry.Value["Wagered"]?.ToObject<long>() ?? 0;
-                var r = entry.Value["Returned"]?.ToObject<long>() ?? 0;
-                var net = entry.Value["Net"]?.ToObject<long>() ?? (r - w);
+                var staked = entry.Value["Wagered"]?.ToObject<long>() ?? 0;
+                var back = entry.Value["Returned"]?.ToObject<long>() ?? 0;
+                var net = entry.Value["Net"]?.ToObject<long>() ?? (back - staked);
 
-                var colour = net > 0 ? "#8cd173" : (net < 0 ? "#eb6b5c" : "#a9b8a4");
-                var sign = net > 0 ? "+" : "";
-
-                text.AppendLine(
-                    $"<color=#a9b8a4>{Short(entry.Name),-6}</color> staked {w,14:N0}   back {r,14:N0}   " +
-                    $"<color={colour}>{sign}{net:N0}</color>");
+                MoneyRow(
+                    Short(entry.Name),
+                    staked.ToString("N0"),
+                    back.ToString("N0"),
+                    (net > 0 ? "+" : "") + net.ToString("N0"),
+                    net > 0 ? Good : (net < 0 ? Bad : Faint),
+                    20f);
             }
+        }
 
-            return text.ToString();
+        /// <summary>One figure with its name under it.</summary>
+        private static void Tile(string value, string name, Color colour)
+        {
+            var tile = NewBox("Tile", _statsTiles, new Color(1f, 1f, 1f, 0.04f), 8, new Color(1f, 1f, 1f, 0.07f), 2);
+            SetSize(tile, 110f, 78f);
+
+            var inner = tile.gameObject.AddComponent<VerticalLayoutGroup>();
+            inner.childAlignment = TextAnchor.MiddleCenter;
+            inner.spacing = 2f;
+            inner.childForceExpandWidth = false;
+            inner.childForceExpandHeight = false;
+            inner.childControlWidth = false;
+            inner.childControlHeight = false;
+
+            SetSize(Label(tile, value, 23f, colour, TextAlignmentOptions.Center).rectTransform, 104f, 30f);
+            SetSize(Label(tile, name, 13f, Faint, TextAlignmentOptions.Center).rectTransform, 104f, 18f);
+        }
+
+        /// <summary>
+        /// One currency across four columns. Fixed widths, because numbers that do not
+        /// line up are harder to read than numbers that are simply small.
+        /// </summary>
+        private static void MoneyRow(string wallet, string staked, string back, string net, Color netColour, float size)
+        {
+            var row = NewRow("Row", _statsRows, 0f);
+            SetSize(row, 840f, size + 8f);
+
+            SetSize(Label(row, wallet, size, Faint, TextAlignmentOptions.Left).rectTransform, 120f, size + 6f);
+            SetSize(Label(row, staked, size, Ink, TextAlignmentOptions.Right).rectTransform, 250f, size + 6f);
+            SetSize(Label(row, back, size, Ink, TextAlignmentOptions.Right).rectTransform, 250f, size + 6f);
+            SetSize(Label(row, net, size, netColour, TextAlignmentOptions.Right).rectTransform, 220f, size + 6f);
         }
 
         private static void BuildHeader(RectTransform parent)
@@ -957,7 +1053,7 @@ namespace Blackjack.Client
             var footer = NewRow("Footer", stack, 14f);
             SetSize(footer, 1340f, 44f);
 
-            Chip(footer, "RECORD", 180f, ToggleStats);
+            _statsButton = Chip(footer, "STATS", 180f, ToggleStats);
 
             _leave = Chip(footer, "LEAVE TABLE", 220f, Close);
         }
