@@ -274,8 +274,14 @@ namespace Blackjack.Client
         }
 
         /// <summary>
-        /// Whether a point falls inside a suit. Y is up, so the shapes are described the
-        /// way they are drawn rather than the way a texture is stored.
+        /// Whether a point falls inside a suit. Y is up, so the shapes are described
+        /// the way they are drawn rather than the way a texture is stored.
+        ///
+        /// The numbers came from rendering these outside the game and measuring them,
+        /// not from taste. Worth knowing why: heart(x, -y) spans y -1.08 to +0.42 --
+        /// it fills the whole box -- so a spade built that way has no room left for a
+        /// stem, and every stem drawn for it was buried inside the lobes and invisible.
+        /// The lobes are scaled about their own centre and lifted first.
         /// </summary>
         private static bool Inside(char suit, float x, float y)
         {
@@ -289,18 +295,17 @@ namespace Blackjack.Client
                     return Heart(x, y);
 
                 case 'S':
-                    // A heart upside down, on a stem.
-                    return Heart(x * 1.02f, -y + 0.12f) || Stem(x, y);
+                    return Lobes(x, y, 0.88f, 0.24f) || Stem(x, y, -0.20f, 0.13f, 0.40f, -0.98f);
 
                 case 'C':
-                    return Club(x, y) || Stem(x, y);
+                    return Club(x, y) || Stem(x, y, 0f, 0.07f, 0.41f, -0.95f);
 
                 default:
                     return false;
             }
         }
 
-        /// <summary>The classic implicit heart, scaled to sit in the box.</summary>
+        /// <summary>The classic implicit heart.</summary>
         private static bool Heart(float x, float y)
         {
             const float scale = 1.18f;
@@ -311,27 +316,40 @@ namespace Blackjack.Client
             return (a * a * a) - (hx * hx * hy * hy * hy) <= 0f;
         }
 
+        /// <summary>
+        /// An upside-down heart, scaled by <paramref name="k"/> about its own centre
+        /// and recentred on <paramref name="centre"/>. That measured centre of -0.33 is
+        /// the whole reason this is a separate method rather than a flipped call.
+        /// </summary>
+        private static bool Lobes(float x, float y, float k, float centre)
+        {
+            const float measuredCentre = -0.33f;
+            return Heart(x / k, -(((y - centre) / k) + measuredCentre));
+        }
+
         /// <summary>Three lobes, for the club.</summary>
         private static bool Club(float x, float y)
         {
-            const float r = 0.42f;
-            return Circle(x, y - 0.44f, r)
-                   || Circle(x - 0.46f, y + 0.06f, r)
-                   || Circle(x + 0.46f, y + 0.06f, r);
+            const float r = 0.40f;
+            return Circle(x, y - 0.46f, r)
+                   || Circle(x - 0.45f, y + 0.04f, r)
+                   || Circle(x + 0.45f, y + 0.04f, r);
         }
 
-        /// <summary>The tapered foot shared by the spade and the club.</summary>
-        private static bool Stem(float x, float y)
+        /// <summary>
+        /// The tapered foot shared by the spade and the club. Widens smoothly to the
+        /// base; the first version switched multiplier partway down and left a visible
+        /// step in the middle of every club.
+        /// </summary>
+        private static bool Stem(float x, float y, float top, float half0, float half1, float bottom)
         {
-            if (y > 0.06f || y < -0.92f)
+            if (y > top || y < bottom)
             {
                 return false;
             }
 
-            // Widens towards the base.
-            var halfWidth = Mathf.Lerp(0.06f, 0.40f, Mathf.InverseLerp(0.06f, -0.92f, y));
-            halfWidth *= halfWidth > 0.2f ? 1f : 1f;
-            return Mathf.Abs(x) <= halfWidth * (y < -0.62f ? 1.1f : 0.7f);
+            var t = (top - y) / (top - bottom);
+            return Mathf.Abs(x) <= half0 + ((half1 - half0) * t * t);
         }
 
         private static bool Circle(float x, float y, float r) => (x * x) + (y * y) <= r * r;

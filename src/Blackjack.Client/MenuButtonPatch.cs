@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using EFT.UI;
 using HarmonyLib;
@@ -235,44 +236,80 @@ namespace Blackjack.Client
             mine.sizeDelta = theirs.sizeDelta;
             mine.localScale = theirs.localScale;
 
-            // One row below, using the gap between two real buttons rather than a
-            // number picked by eye, so it still lines up if a mod restyles them.
-            mine.anchoredPosition = theirs.anchoredPosition + new Vector2(0f, -RowHeight(template));
-            ours.transform.SetSiblingIndex(template.transform.GetSiblingIndex() + 1);
+            // One row below the *lowest* button, not below the template.
+            //
+            // Measuring from the hideout button put ours a row under that one, and a
+            // menu mod then moved the exit button somewhere this could not see -- so
+            // the two ended up closer together than any other pair on the menu. The
+            // bottom of the column is the only place a new entry can go without
+            // guessing, and the gap is measured from the buttons that are already
+            // there rather than picked.
+            var lowest = LowestButton(ours, template);
+            var anchor = lowest != null ? lowest : theirs;
+
+            mine.anchoredPosition = anchor.anchoredPosition + new Vector2(0f, -RowGap(template));
+            ours.transform.SetAsLastSibling();
+        }
+
+        /// <summary>The button sitting lowest on the menu, ours excluded.</summary>
+        private static RectTransform LowestButton(DefaultUIButton ours, DefaultUIButton template)
+        {
+            var parent = template.transform.parent;
+            if (parent == null)
+            {
+                return null;
+            }
+
+            return parent.GetComponentsInChildren<DefaultUIButton>(true)
+                .Where(b => b != null && b.name != ButtonName && b != ours)
+                .Select(b => b.GetComponent<RectTransform>())
+                .Where(r => r != null && r.gameObject.activeInHierarchy)
+                .OrderBy(r => r.anchoredPosition.y)
+                .FirstOrDefault();
         }
 
         /// <summary>
-        /// The vertical distance between two adjacent menu buttons, measured rather
-        /// than assumed. Falls back to the template's own height.
+        /// The spacing between adjacent menu buttons, measured rather than assumed.
+        ///
+        /// The most common gap, not the first one found. Taking the first meant one
+        /// odd pair -- an exit button that is a group rather than a plain button, say
+        /// -- decided the spacing for everything.
         /// </summary>
-        private static float RowHeight(DefaultUIButton template)
+        private static float RowGap(DefaultUIButton template)
         {
             var parent = template.transform.parent;
             var rect = template.GetComponent<RectTransform>();
-            var fallback = rect != null ? Mathf.Abs(rect.sizeDelta.y) : 40f;
+            var fallback = rect != null ? Mathf.Abs(rect.sizeDelta.y) : 46f;
 
             if (parent != null)
             {
                 var rows = parent.GetComponentsInChildren<DefaultUIButton>(true)
                     .Where(b => b != null && b.name != ButtonName)
                     .Select(b => b.GetComponent<RectTransform>())
-                    .Where(r => r != null)
+                    .Where(r => r != null && r.gameObject.activeInHierarchy)
                     .Select(r => r.anchoredPosition.y)
                     .Distinct()
                     .OrderByDescending(y => y)
                     .ToList();
 
+                var gaps = new List<float>();
                 for (var i = 1; i < rows.Count; i++)
                 {
                     var gap = Mathf.Abs(rows[i - 1] - rows[i]);
                     if (gap > 1f)
                     {
-                        return gap;
+                        gaps.Add(gap);
                     }
+                }
+
+                if (gaps.Count > 0)
+                {
+                    gaps.Sort();
+                    return gaps[gaps.Count / 2];
                 }
             }
 
-            return fallback > 1f ? fallback : 40f;
+            return fallback > 1f ? fallback : 46f;
         }
 
         private static DefaultUIButton FindOurs(MenuScreen screen) =>
