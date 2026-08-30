@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using Newtonsoft.Json.Linq;
@@ -50,6 +51,8 @@ namespace Blackjack.Client
         private static RectTransform _actionRow;
         private static GameObject _betControls;
         private static GameObject _bettingSpot;
+        private static CanvasGroup _fade;
+        private static Coroutine _fading;
         private static GameObject _leave;
         private static GameObject _confirm;
         private static TextMeshProUGUI _confirmText;
@@ -105,6 +108,7 @@ namespace Blackjack.Client
                 }
 
                 _root.SetActive(true);
+                StartFade(1f, false);
 
                 // A canvas built this frame has not had a layout pass yet, so its
                 // controls have no real size or position until one happens. Anything
@@ -134,7 +138,63 @@ namespace Blackjack.Client
                 _confirm.SetActive(false);
             }
 
-            if (_root != null)
+            if (_root == null || !_root.activeSelf)
+            {
+                return;
+            }
+
+            // Faded rather than switched off. A full-screen dim and a table vanishing
+            // between one frame and the next reads as a glitch; a sixth of a second is
+            // enough to read as leaving.
+            StartFade(0f, true);
+        }
+
+        private static void StartFade(float target, bool deactivateAfter)
+        {
+            if (_fade == null || BlackjackClientPlugin.Instance == null)
+            {
+                // No coroutine to run it, so snap and stay correct.
+                if (_fade != null)
+                {
+                    _fade.alpha = target;
+                }
+
+                if (deactivateAfter && _root != null)
+                {
+                    _root.SetActive(false);
+                }
+
+                return;
+            }
+
+            if (_fading != null)
+            {
+                BlackjackClientPlugin.Instance.StopCoroutine(_fading);
+            }
+
+            _fading = BlackjackClientPlugin.Instance.StartCoroutine(FadeTo(target, deactivateAfter));
+        }
+
+        private static IEnumerator FadeTo(float target, bool deactivateAfter)
+        {
+            const float duration = 0.16f;
+            var from = _fade.alpha;
+
+            // Clicks are ignored while it is on its way out, so a stray one during the
+            // fade cannot deal a hand at a table that is closing.
+            _fade.interactable = !deactivateAfter;
+            _fade.blocksRaycasts = !deactivateAfter;
+
+            for (var t = 0f; t < duration; t += Time.unscaledDeltaTime)
+            {
+                _fade.alpha = Mathf.Lerp(from, target, t / duration);
+                yield return null;
+            }
+
+            _fade.alpha = target;
+            _fading = null;
+
+            if (deactivateAfter && _root != null)
             {
                 _root.SetActive(false);
             }
@@ -485,34 +545,54 @@ namespace Blackjack.Client
 
             _root = canvasObject;
 
+            _fade = canvasObject.AddComponent<CanvasGroup>();
+            _fade.alpha = 0f;
+
             var backdrop = NewBox("Backdrop", canvasObject.transform, new Color(0f, 0f, 0f, 0.86f), 0, default, 0);
             Stretch(backdrop);
 
-            // A photograph of a real table if one is installed beside the plugin,
-            // otherwise the drawn one. The photograph is a loose PNG so it can be
-            // swapped for another without rebuilding anything.
+            // The table above, the controls under it.
+            //
+            // The photograph is an oval, and an oval has far less usable room than the
+            // rectangle it sits in: measured, the felt is 1230 by 654 with the cloth
+            // narrowing to 58% of the table's width near the bottom edge. The betting
+            // bar is 1340 wide and the whole layout wants 750 of height, so none of it
+            // fits inside. Putting the cloth above and the controls beneath it is not a
+            // compromise either -- it is how a real table is arranged.
+            var root = NewBox("Root", canvasObject.transform, new Color(0f, 0f, 0f, 0f), 0, default, 0);
+            root.anchorMin = root.anchorMax = new Vector2(0.5f, 0.5f);
+            root.pivot = new Vector2(0.5f, 0.5f);
+            root.sizeDelta = new Vector2(1400f, 1060f);
+
+            var rootColumn = root.gameObject.AddComponent<VerticalLayoutGroup>();
+            rootColumn.childAlignment = TextAnchor.MiddleCenter;
+            rootColumn.spacing = 14f;
+            rootColumn.childForceExpandWidth = false;
+            rootColumn.childForceExpandHeight = false;
+            rootColumn.childControlWidth = false;
+            rootColumn.childControlHeight = false;
+
             var photo = Textures.FromFile(TableImagePath);
             RectTransform felt;
 
             if (photo != null)
             {
-                var table = NewImage("Table", canvasObject.transform, Color.white);
+                var table = NewImage("Table", root, Color.white);
                 table.sprite = photo;
                 table.preserveAspect = true;
                 var tableRect = (RectTransform)table.transform;
-                tableRect.anchorMin = tableRect.anchorMax = new Vector2(0.5f, 0.5f);
-                tableRect.pivot = new Vector2(0.5f, 0.5f);
-                tableRect.sizeDelta = new Vector2(1470f, 980f);
+                SetSize(tableRect, 1324f, 800f);
 
                 felt = tableRect;
-                _feltInset = new Vector4(112f, 96f, 112f, 104f);
+
+                // Measured off the image: the cloth begins 8.4% in from the left, 7.9%
+                // from the right, 14.6% down from the top and 18.7% up from the bottom.
+                _feltInset = new Vector4(112f, 118f, 106f, 150f);
             }
             else
             {
-                var rim = NewBox("Rim", canvasObject.transform, FeltEdge, 26, Rail, 6);
-                rim.anchorMin = rim.anchorMax = new Vector2(0.5f, 0.5f);
-                rim.pivot = new Vector2(0.5f, 0.5f);
-                rim.sizeDelta = new Vector2(1460f, 900f);
+                var rim = NewBox("Rim", root, FeltEdge, 26, Rail, 6);
+                SetSize(rim, 1324f, 800f);
 
                 felt = NewBox("Felt", rim, Felt, 20, default, 0);
                 felt.anchorMin = Vector2.zero;
@@ -520,27 +600,25 @@ namespace Blackjack.Client
                 felt.offsetMin = new Vector2(18f, 18f);
                 felt.offsetMax = new Vector2(-18f, -18f);
 
-                // Lit from the middle rather than flat. The cheapest thing that stops a
-                // green rectangle reading as a green rectangle.
                 var vignette = NewImage("Vignette", felt, Color.white);
                 vignette.sprite = Textures.Vignette(new Color(0f, 0f, 0f, 0.55f));
                 vignette.raycastTarget = false;
                 Stretch((RectTransform)vignette.transform);
 
-                _feltInset = new Vector4(30f, 22f, 30f, 84f);
+                _feltInset = new Vector4(30f, 26f, 30f, 30f);
             }
 
             BuildHeader(felt);
 
-            // Everything on the cloth in one column. Placing the dealer, the hands and
-            // the controls as separate regions meant each was individually plausible
-            // and any two could still collide -- a settled hand's BLACKJACK label
-            // landed on the betting bar, because a won hand is taller than a live one
-            // and nothing said where the space came from. A layout group settles it.
+            // What is on the cloth, in one column: the dealer, then the player. Placing
+            // them as separate regions meant each was individually plausible and any
+            // two could still collide -- a settled hand's BLACKJACK label landed on the
+            // betting bar, because a won hand is taller than a live one and nothing
+            // said where the space came from.
             var column = NewBox("Column", felt, new Color(0f, 0f, 0f, 0f), 0, default, 0);
             Stretch(column);
             column.offsetMin = new Vector2(_feltInset.x, _feltInset.y);
-            column.offsetMax = new Vector2(-_feltInset.z, -_feltInset.w);
+            column.offsetMax = new Vector2(-_feltInset.z, -(_feltInset.w + 46f));
 
             var flow = column.gameObject.AddComponent<VerticalLayoutGroup>();
             flow.childAlignment = TextAnchor.UpperCenter;
@@ -551,9 +629,10 @@ namespace Blackjack.Client
             flow.childControlHeight = false;
 
             BuildDealer(column);
-            BuildTableMarkings(column);
             BuildHands(column);
-            BuildBottom(column);
+
+            // Under the table, on the dark, where there is room for a full-width bar.
+            BuildBottom(root);
             BuildConfirm(canvasObject.transform);
 
             EnsureEventSystem();
@@ -563,15 +642,16 @@ namespace Blackjack.Client
 
         private static void BuildHeader(RectTransform felt)
         {
-            // Inside the cloth rather than on the rail, since the rail is now a
-            // photograph of wood and text sitting on it looks stuck there.
-            var inset = _feltInset.y + 26f;
+            // Inside the cloth rather than on the rail: the rail is a photograph of
+            // wood, and text on it looks stuck to the furniture. Kept well in from the
+            // sides too, because the oval narrows towards the top.
+            var inset = _feltInset.y + 22f;
 
-            var title = Label(felt, "BLACKJACK", 30f, Ink, TextAlignmentOptions.Left);
-            Anchor(title.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(_feltInset.x + 210f, -inset), new Vector2(400f, 40f));
+            var title = Label(felt, "BLACKJACK", 26f, Ink, TextAlignmentOptions.Left);
+            Anchor(title.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(_feltInset.x + 220f, -inset), new Vector2(400f, 34f));
 
-            _balance = Label(felt, "", 24f, Ink, TextAlignmentOptions.Right);
-            Anchor(_balance.rectTransform, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-(_feltInset.z + 240f), -inset), new Vector2(460f, 40f));
+            _balance = Label(felt, "", 22f, Ink, TextAlignmentOptions.Right);
+            Anchor(_balance.rectTransform, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-(_feltInset.z + 250f), -inset), new Vector2(460f, 34f));
         }
 
         private static void BuildDealer(RectTransform column)
@@ -579,17 +659,10 @@ namespace Blackjack.Client
             SetSize(Label(column, "DEALER", 19f, Faint, TextAlignmentOptions.Center).rectTransform, 400f, 24f);
 
             _dealerCards = NewRow("DealerCards", column, 10f);
-            SetSize(_dealerCards, 900f, CardView.Height);
+            SetSize(_dealerCards, 820f, CardView.Height);
 
             _dealerValue = Label(column, "", 26f, Ink, TextAlignmentOptions.Center);
             SetSize(_dealerValue.rectTransform, 300f, 30f);
-        }
-
-        private static void BuildTableMarkings(RectTransform column)
-        {
-            SetSize(
-                Label(column, "BLACKJACK PAYS 3 TO 2      DEALER MUST STAND ON 17", 19f, Gold, TextAlignmentOptions.Center).rectTransform,
-                1000f, 26f);
         }
 
         /// <summary>
@@ -600,7 +673,7 @@ namespace Blackjack.Client
         private static void BuildHands(RectTransform column)
         {
             var area = NewBox("HandArea", column, new Color(0f, 0f, 0f, 0f), 0, default, 0);
-            SetSize(area, 1300f, 232f);
+            SetSize(area, 1000f, 226f);
 
             var spot = NewImage("Spot", area, Gold);
             spot.sprite = Textures.Ring(Gold);
