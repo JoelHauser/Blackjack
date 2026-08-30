@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Newtonsoft.Json.Linq;
@@ -50,6 +50,15 @@ namespace Blackjack.Client
 
         private static readonly List<(string Wallet, GameObject Chip)> _wallets = new List<(string, GameObject)>();
 
+        private static TMP_InputField _wagerInput;
+
+        /// <summary>
+        /// What the player holds, as of the last time the server said. Used to warn
+        /// before a bet is sent and to size ALL IN. The server checks again regardless;
+        /// this only saves a pointless round trip and a confusing refusal.
+        /// </summary>
+        private static readonly Dictionary<string, long> _balances = new Dictionary<string, long>();
+
         private static string _wallet = "Roubles";
         private static int _wager = 10_000;
 
@@ -82,6 +91,8 @@ namespace Blackjack.Client
 
                 _root.SetActive(true);
 
+                RefreshBalances();
+
                 // Resume rather than assume: a hand can still be live from a previous
                 // visit, and /blackjack/state is what says so.
                 Render(BlackjackApi.State(), "");
@@ -104,6 +115,15 @@ namespace Blackjack.Client
 
         private static void Deal()
         {
+            // Caught here only to save a round trip and a refusal that reads worse than
+            // this does. The server checks the balance itself and is the authority.
+            if (_balances.TryGetValue(_wallet, out var held) && _wager > held)
+            {
+                _message.text = $"You have {held:N0} {Short(_wallet)}. That bet is more than you are carrying.";
+                _message.color = Bad;
+                return;
+            }
+
             Render(BlackjackApi.Deal(_wallet, _wager), $"Dealing {_wager:N0} {_wallet}...");
         }
 
@@ -122,15 +142,13 @@ namespace Blackjack.Client
             // of range.
             _wager = IsValuable(wallet) ? 1 : 10_000;
 
+            if (_wagerInput != null)
+            {
+                _wagerInput.SetTextWithoutNotify(_wager.ToString());
+            }
+
             UpdateWagerLabel();
             HighlightWallet();
-        }
-
-        private static void StepWager(int direction)
-        {
-            var step = IsValuable(_wallet) ? 1 : 1_000;
-            _wager = Mathf.Max(step, _wager + (direction * step));
-            UpdateWagerLabel();
         }
 
         private static bool IsValuable(string wallet) =>
@@ -178,7 +196,13 @@ namespace Blackjack.Client
                 _balance.text = $"{balance.Value:N0}  {wallet}";
             }
 
+            // A settled hand has moved money, so what the player holds has changed.
             var round = response["Round"] as JObject;
+            if ((round?["Phase"]?.ToString() ?? "") == "Settled")
+            {
+                RefreshBalances();
+            }
+
             RenderRound(round);
         }
 
@@ -300,6 +324,40 @@ namespace Blackjack.Client
             Chip(_actionRow, "DEAL", 190f, Deal);
         }
 
+        private static void RefreshBalances()
+        {
+            var ping = BlackjackApi.Ping();
+            var balances = ping?["Balances"];
+            if (balances == null)
+            {
+                return;
+            }
+
+            _balances.Clear();
+            foreach (var entry in balances.Children<JProperty>())
+            {
+                _balances[entry.Name] = entry.Value.ToObject<long>();
+            }
+
+            UpdateWagerLabel();
+        }
+
+        private static void SetPreferredHeight(RectTransform rect, float height)
+        {
+            var element = rect.gameObject.AddComponent<LayoutElement>();
+            element.preferredHeight = height;
+            element.minHeight = height;
+        }
+
+        private static void SetPreferredSize(RectTransform rect, float width, float height)
+        {
+            var element = rect.gameObject.AddComponent<LayoutElement>();
+            element.preferredWidth = width;
+            element.minWidth = width;
+            element.preferredHeight = height;
+            element.minHeight = height;
+        }
+
         // ------------------------------------------------------------------ building
 
         private static void Build()
@@ -314,7 +372,14 @@ namespace Blackjack.Client
             var scaler = canvasObject.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
-            scaler.matchWidthOrHeight = 0.5f;
+
+            // Match height, not a blend of both. Blending makes the table grow with
+            // screen width, so an ultrawide gets a table stretched across it while a
+            // 16:9 screen gets a smaller one -- the same layout at two different sizes.
+            // Tying it to height keeps the table one size and lets the extra width on a
+            // wide monitor stay as empty space around it, which is what a table sitting
+            // on a floor actually looks like.
+            scaler.matchWidthOrHeight = 1f;
 
             _root = canvasObject;
 
@@ -378,31 +443,120 @@ namespace Blackjack.Client
             Anchor(_handsRow, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -110f), new Vector2(1300f, 260f));
         }
 
+        /// <summary>
+        /// Wallet chips on one row, the wager on the next.
+        ///
+        /// Both rows are laid out by Unity rather than by arithmetic. The first attempt
+        /// positioned every control by hand inside one bar, mixing anchors as it went,
+        /// and they landed on top of each other. A layout group cannot make that
+        /// mistake.
+        /// </summary>
         private static void BuildBetting(RectTransform felt)
         {
             var holder = NewPanel("Betting", felt, new Color(0f, 0f, 0f, 0.18f));
-            Anchor(holder, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 176f), new Vector2(1300f, 96f));
+            Anchor(holder, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 208f), new Vector2(1320f, 130f));
             _betControls = holder.gameObject;
 
+            var column = holder.gameObject.AddComponent<VerticalLayoutGroup>();
+            column.childAlignment = TextAnchor.MiddleCenter;
+            column.spacing = 10f;
+            column.padding = new RectOffset(16, 16, 12, 12);
+            column.childForceExpandWidth = false;
+            column.childForceExpandHeight = false;
+            column.childControlWidth = true;
+            column.childControlHeight = true;
+
             _walletRow = NewRow("Wallets", holder, 8f);
-            Anchor(_walletRow, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(430f, 0f), new Vector2(840f, 46f));
-            _walletRow.pivot = new Vector2(0.5f, 0.5f);
+            SetPreferredHeight(_walletRow, 46f);
 
             foreach (var wallet in new[] { "Roubles", "Dollars", "Euros", "GpCoins", "Bitcoin", "LegaMedals" })
             {
                 var captured = wallet;
-                var chip = Chip(_walletRow, Short(wallet), 128f, () => ChooseWallet(captured));
+                var chip = Chip(_walletRow, Short(wallet), 132f, () => ChooseWallet(captured));
                 _wallets.Add((wallet, chip));
             }
 
-            // Wager stepper. The step is a convenience for the mouse, not a rule: the
-            // server owns the limits and refuses anything outside them by name.
-            Chip(holder, "-", 54f, () => StepWager(-1), new Vector2(-560f, -26f));
-            _wagerLabel = Label(holder, "", 26f, Ink, TextAlignmentOptions.Center);
-            Anchor(_wagerLabel.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(-400f, -26f), new Vector2(260f, 34f));
-            Chip(holder, "+", 54f, () => StepWager(1), new Vector2(-240f, -26f));
+            var betRow = NewRow("Bet", holder, 12f);
+            SetPreferredHeight(betRow, 48f);
+
+            var caption = Label(betRow, "BET", 20f, Faint, TextAlignmentOptions.Right);
+            SetPreferredSize(caption.rectTransform, 60f, 34f);
+
+            BuildWagerInput(betRow);
+
+            Chip(betRow, "ALL IN", 120f, BetEverything);
+
+            _wagerLabel = Label(betRow, "", 20f, Faint, TextAlignmentOptions.Left);
+            SetPreferredSize(_wagerLabel.rectTransform, 420f, 34f);
 
             HighlightWallet();
+            UpdateWagerLabel();
+        }
+
+        /// <summary>
+        /// A field the player types into, rather than a stepper they wear out. Getting
+        /// from a thousand to five hundred thousand was ninety clicks.
+        /// </summary>
+        private static void BuildWagerInput(Transform parent)
+        {
+            var frame = NewPanel("WagerInput", parent, new Color(0.10f, 0.11f, 0.11f, 1f));
+            SetPreferredSize(frame, 260f, 44f);
+
+            var viewport = new GameObject("TextArea", typeof(RectTransform), typeof(RectMask2D));
+            viewport.transform.SetParent(frame, false);
+            var viewportRect = (RectTransform)viewport.transform;
+            Stretch(viewportRect);
+            viewportRect.offsetMin = new Vector2(12f, 4f);
+            viewportRect.offsetMax = new Vector2(-12f, -4f);
+
+            var text = Label(viewportRect, string.Empty, 24f, Ink, TextAlignmentOptions.Left);
+            Stretch(text.rectTransform);
+            text.raycastTarget = true;
+
+            var input = frame.gameObject.AddComponent<TMP_InputField>();
+            input.textViewport = viewportRect;
+            input.textComponent = text;
+            input.fontAsset = _font;
+            input.pointSize = 24f;
+            input.contentType = TMP_InputField.ContentType.IntegerNumber;
+            input.characterLimit = 12;
+            input.restoreOriginalTextOnEscape = true;
+            input.text = _wager.ToString();
+            input.onValueChanged.AddListener(OnWagerTyped);
+
+            _wagerInput = input;
+        }
+
+        private static void OnWagerTyped(string typed)
+        {
+            // An empty or half-typed box is not an error worth shouting about; it is
+            // simply not a bet yet.
+            if (int.TryParse(typed, out var value) && value > 0)
+            {
+                _wager = value;
+            }
+
+            UpdateWagerLabel();
+        }
+
+        /// <summary>
+        /// Everything in the chosen wallet. Whether that is a legal bet is still the
+        /// server's call -- most wallets cap well below a full stash.
+        /// </summary>
+        private static void BetEverything()
+        {
+            if (!_balances.TryGetValue(_wallet, out var held) || held <= 0)
+            {
+                return;
+            }
+
+            _wager = (int)Math.Min(held, int.MaxValue);
+
+            if (_wagerInput != null)
+            {
+                _wagerInput.SetTextWithoutNotify(_wager.ToString());
+            }
+
             UpdateWagerLabel();
         }
 
@@ -419,12 +573,33 @@ namespace Blackjack.Client
 
         // ------------------------------------------------------------------ widgets
 
+        /// <summary>
+        /// Says what is held and whether the bet fits inside it. Advisory: the server
+        /// decides, and it also enforces per-wallet minimums and maximums this does not
+        /// know about.
+        /// </summary>
         private static void UpdateWagerLabel()
         {
-            if (_wagerLabel != null)
+            if (_wagerLabel == null)
             {
-                _wagerLabel.text = _wager.ToString("N0");
+                return;
             }
+
+            if (!_balances.TryGetValue(_wallet, out var held))
+            {
+                _wagerLabel.text = "";
+                return;
+            }
+
+            if (_wager > held)
+            {
+                _wagerLabel.text = $"you have {held:N0} -- not enough";
+                _wagerLabel.color = Bad;
+                return;
+            }
+
+            _wagerLabel.text = $"you have {held:N0}";
+            _wagerLabel.color = Faint;
         }
 
         private static void HighlightWallet()
