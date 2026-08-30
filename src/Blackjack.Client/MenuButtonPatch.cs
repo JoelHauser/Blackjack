@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Linq;
 using EFT.UI;
@@ -6,6 +6,7 @@ using HarmonyLib;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
+using UnityEngine.UI;
 
 namespace Blackjack.Client
 {
@@ -117,6 +118,7 @@ namespace Blackjack.Client
             }
 
             Relabel(button, "BLACKJACK");
+            ReplaceIcon(button);
             button.Interactable = true;
             Wire(button);
             Follow(button, template);
@@ -141,6 +143,39 @@ namespace Blackjack.Client
             if (label != null && size > 0f)
             {
                 label.fontSize = size;
+            }
+        }
+
+        /// <summary>
+        /// Swaps the borrowed icon for a spade.
+        ///
+        /// A clone wears whatever icon it copied, so without this the BLACKJACK button
+        /// carries the hideout's. Blanking it is not the answer either: with a menu mod
+        /// installed the icon is the button's main visual and the others would all have
+        /// one, leaving ours conspicuously bare. A spade is drawn from the same code
+        /// that draws the cards, so it needs no art shipped and looks deliberate in
+        /// both cases.
+        ///
+        /// The container is left alone whatever happens, because its size is part of
+        /// the row's spacing.
+        /// </summary>
+        private static void ReplaceIcon(DefaultUIButton button)
+        {
+            var icons = button.GetComponentsInChildren<Image>(true)
+                .Where(i => i != null && i.name.IndexOf("icon", StringComparison.OrdinalIgnoreCase) >= 0)
+                .ToList();
+
+            if (icons.Count == 0)
+            {
+                return;
+            }
+
+            var spade = Textures.Suit('S', Color.white);
+
+            foreach (var icon in icons)
+            {
+                icon.sprite = spade;
+                icon.preserveAspect = true;
             }
         }
 
@@ -181,6 +216,16 @@ namespace Blackjack.Client
             var theirs = template.GetComponent<RectTransform>();
             if (mine == null || theirs == null)
             {
+                return;
+            }
+
+            // If the menu arranges its buttons with a layout group, it will place this
+            // one too, and anything set here would be overwritten on the next rebuild
+            // anyway. Sibling order is the only thing worth saying in that case.
+            if (ours.transform.parent != null &&
+                ours.transform.parent.GetComponent<LayoutGroup>() != null)
+            {
+                ours.transform.SetSiblingIndex(template.transform.GetSiblingIndex() + 1);
                 return;
             }
 
