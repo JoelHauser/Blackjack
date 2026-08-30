@@ -373,7 +373,42 @@ namespace Blackjack.Client
                 }
             }
 
+            FitHands();
             RenderActions(round, phase);
+        }
+
+        /// <summary>
+        /// Scales the hands down if they no longer fit across the cloth.
+        ///
+        /// Two five-card hands come to 1088 against an area of 940. It is a rare hand
+        /// and a rarer pair of them, but the alternative to shrinking is cards sliding
+        /// off the felt, and a slightly small hand still reads correctly.
+        /// </summary>
+        private static void FitHands()
+        {
+            if (_handsRow == null)
+            {
+                return;
+            }
+
+            _handsRow.localScale = Vector3.one;
+
+            var area = _handsRow.parent as RectTransform;
+            if (area == null)
+            {
+                return;
+            }
+
+            LayoutRebuilder.ForceRebuildLayoutImmediate(_handsRow);
+
+            var needed = LayoutUtility.GetPreferredWidth(_handsRow);
+            var available = area.rect.width;
+
+            if (needed > available && available > 1f)
+            {
+                var scale = available / needed;
+                _handsRow.localScale = new Vector3(scale, scale, 1f);
+            }
         }
 
         private static void BuildHand(RectTransform parent, JObject hand, bool isActive)
@@ -393,15 +428,32 @@ namespace Blackjack.Client
             layout.childForceExpandHeight = false;
             layout.childForceExpandWidth = false;
             layout.childControlHeight = true;
-            layout.childControlWidth = true;
+
+            // Left to their own widths. The card row and the labels each know how wide
+            // they should be; a column that overrides them undoes the calculation above.
+            layout.childControlWidth = false;
 
             var fitter = column.gameObject.AddComponent<ContentSizeFitter>();
             fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            var cardsRow = NewRow("Cards", column, 10f);
-            SetSize(cardsRow, 0f, CardView.Height);
-            foreach (var card in hand["Cards"]?.ToObject<List<string>>() ?? new List<string>())
+            var cards = hand["Cards"]?.ToObject<List<string>>() ?? new List<string>();
+
+            // Width computed from the cards, not left at zero.
+            //
+            // This row previously claimed a preferred width of nothing, so the column
+            // around it measured about as wide as its own padding while the cards
+            // spilled out of it -- which is why two split hands sat on top of each
+            // other. A layout group believes what its children tell it.
+            const float cardGap = 10f;
+            var rowWidth = cards.Count > 0
+                ? (cards.Count * CardView.Width) + ((cards.Count - 1) * cardGap)
+                : CardView.Width;
+
+            var cardsRow = NewRow("Cards", column, cardGap);
+            SetSize(cardsRow, rowWidth, CardView.Height);
+
+            foreach (var card in cards)
             {
                 CardView.Build(cardsRow, card, _font);
             }
@@ -411,8 +463,12 @@ namespace Blackjack.Client
             var outcome = hand["Outcome"]?.ToString();
             var wager = hand["Wager"]?.ToObject<long>() ?? 0;
 
-            SetSize(Label(column, $"{value}{(soft ? " soft" : "")}", 26f, Ink, TextAlignmentOptions.Center).rectTransform, 220f, 32f);
-            SetSize(Label(column, $"{wager:N0} {Short(_wallet)}", 17f, Faint, TextAlignmentOptions.Center).rectTransform, 220f, 22f);
+            // Labels no wider than the cards they belong to, or a two-card hand claims
+            // 220 of width for its total and the hands drift apart for no reason.
+            var labelWidth = Mathf.Max(rowWidth, 140f);
+
+            SetSize(Label(column, $"{value}{(soft ? " soft" : "")}", 26f, Ink, TextAlignmentOptions.Center).rectTransform, labelWidth, 32f);
+            SetSize(Label(column, $"{wager:N0} {Short(_wallet)}", 17f, Faint, TextAlignmentOptions.Center).rectTransform, labelWidth, 22f);
 
             if (!string.IsNullOrEmpty(outcome) && outcome != "Pending")
             {
@@ -420,7 +476,7 @@ namespace Blackjack.Client
                 var pushed = outcome == "Push";
                 SetSize(
                     Label(column, outcome.ToUpperInvariant(), 24f, pushed ? Faint : (won ? Good : Bad), TextAlignmentOptions.Center).rectTransform,
-                    220f,
+                    labelWidth,
                     30f);
             }
         }
@@ -713,7 +769,7 @@ namespace Blackjack.Client
             place.enableWordWrapping = true;
             Stretch(place.rectTransform);
 
-            _handsRow = NewRow("Hands", area, 36f);
+            _handsRow = NewRow("Hands", area, 48f);
             Stretch(_handsRow);
         }
 
@@ -822,6 +878,17 @@ namespace Blackjack.Client
             input.text = _wager.ToString();
             input.onValueChanged.AddListener(OnWagerTyped);
 
+            // The field is a Selectable too, so it can carry the same states as the
+            // buttons beside it rather than being the one dead-looking control.
+            input.transition = Selectable.Transition.SpriteSwap;
+            input.targetGraphic = frame.GetComponent<Image>();
+            input.spriteState = new SpriteState
+            {
+                highlightedSprite = Textures.RoundedBox(8, new Color(0.13f, 0.14f, 0.14f, 1f), Gold, 2),
+                pressedSprite = Textures.RoundedBox(8, new Color(0.13f, 0.14f, 0.14f, 1f), Gold, 2),
+                selectedSprite = Textures.RoundedBox(8, new Color(0.13f, 0.14f, 0.14f, 1f), Gold, 2),
+            };
+
             _wagerInput = input;
         }
 
@@ -855,11 +922,14 @@ namespace Blackjack.Client
         {
             foreach (var (wallet, chip) in Wallets)
             {
-                var image = chip?.GetComponent<Image>();
-                if (image != null)
+                if (chip == null)
                 {
-                    image.sprite = Textures.RoundedBox(8, wallet == _wallet ? ChipOn : ChipFace, ChipEdge, 2);
+                    continue;
                 }
+
+                // Restyled rather than recoloured, so the chosen wallet keeps its hover
+                // and pressed states instead of losing them the moment it is selected.
+                StyleChip(chip, wallet == _wallet ? ChipOn : ChipFace);
             }
         }
 
@@ -886,8 +956,56 @@ namespace Blackjack.Client
             button.targetGraphic = rect.GetComponent<Image>();
             button.onClick.AddListener(() => onClick());
 
+            StyleChip(rect.gameObject, ChipFace);
+
             return rect.gameObject;
         }
+
+        /// <summary>
+        /// Gives a button its hover and pressed states.
+        ///
+        /// Sprite swapping rather than colour tinting, which is Unity's default and is
+        /// useless here. A tint multiplies the graphic's colour, and these buttons are
+        /// white images carrying a dark sprite -- multiplying white by the default
+        /// highlight of 0.96 grey is a change nobody can see. That is why hovering did
+        /// nothing at all.
+        ///
+        /// Hovering lifts the fill and turns the border gold, which reads as lit rather
+        /// than merely different, and matches the gold already used for the table's own
+        /// markings.
+        /// </summary>
+        private static void StyleChip(GameObject chip, Color fill)
+        {
+            var image = chip.GetComponent<Image>();
+            var button = chip.GetComponent<Button>();
+            if (image == null || button == null)
+            {
+                return;
+            }
+
+            var normal = Textures.RoundedBox(8, fill, ChipEdge, 2);
+            var hover = Textures.RoundedBox(8, Lift(fill, 0.10f), Gold, 2);
+            var pressed = Textures.RoundedBox(8, Lift(fill, -0.05f), Gold, 2);
+
+            image.sprite = normal;
+            image.type = Image.Type.Sliced;
+
+            button.transition = Selectable.Transition.SpriteSwap;
+            button.spriteState = new SpriteState
+            {
+                highlightedSprite = hover,
+                pressedSprite = pressed,
+                selectedSprite = normal,
+                disabledSprite = normal,
+            };
+        }
+
+        /// <summary>Lightens or darkens a colour, keeping its alpha.</summary>
+        private static Color Lift(Color colour, float amount) => new Color(
+            Mathf.Clamp01(colour.r + amount),
+            Mathf.Clamp01(colour.g + amount),
+            Mathf.Clamp01(colour.b + amount),
+            colour.a);
 
         private static TextMeshProUGUI Label(Transform parent, string text, float size, Color colour, TextAlignmentOptions align)
         {
