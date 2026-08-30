@@ -68,10 +68,14 @@ namespace Blackjack.Client
 
         /// <summary>
         /// Left, top, right, bottom padding between the table's edge and the cloth it
-        /// is safe to put things on. The photograph has a wooden rail around it; the
-        /// drawn table barely needs any.
+        /// is safe to put things on, as a fraction of the table's size.
+        ///
+        /// A fraction, not pixels, so resizing the table cannot silently push the
+        /// dealer's cards onto the wooden rail. The photograph's numbers were measured
+        /// off the image: the cloth starts 8.4% in from the left, 7.9% from the right,
+        /// 14.6% down and 18.7% up.
         /// </summary>
-        private static Vector4 _feltInset = new Vector4(30f, 22f, 30f, 84f);
+        private static Vector4 _feltFraction = new Vector4(0.03f, 0.03f, 0.03f, 0.03f);
 
         private static string TableImagePath => System.IO.Path.Combine(
             System.IO.Path.GetDirectoryName(BlackjackClientPlugin.Instance?.Info?.Location ?? ".") ?? ".",
@@ -559,10 +563,13 @@ namespace Blackjack.Client
             // bar is 1340 wide and the whole layout wants 750 of height, so none of it
             // fits inside. Putting the cloth above and the controls beneath it is not a
             // compromise either -- it is how a real table is arranged.
+            // Sized to fit 1080 with room to spare. The first attempt asked for 1060
+            // and put 1076 of content in it, so the buttons at the bottom went off the
+            // screen: header 36, table 720, controls 254, two gaps of 14.
             var root = NewBox("Root", canvasObject.transform, new Color(0f, 0f, 0f, 0f), 0, default, 0);
             root.anchorMin = root.anchorMax = new Vector2(0.5f, 0.5f);
             root.pivot = new Vector2(0.5f, 0.5f);
-            root.sizeDelta = new Vector2(1400f, 1060f);
+            root.sizeDelta = new Vector2(1400f, 1038f);
 
             var rootColumn = root.gameObject.AddComponent<VerticalLayoutGroup>();
             rootColumn.childAlignment = TextAnchor.MiddleCenter;
@@ -572,8 +579,18 @@ namespace Blackjack.Client
             rootColumn.childControlWidth = false;
             rootColumn.childControlHeight = false;
 
+            // The header goes above the table, not on it. Dark text on worn green is
+            // hard to read wherever it is put, and the top of an oval is the narrowest
+            // part of the cloth.
+            BuildHeader(root);
+
             var photo = Textures.FromFile(TableImagePath);
             RectTransform felt;
+
+            // 1.655 is the photograph's aspect; the drawn table keeps it so that
+            // swapping between the two does not move everything else.
+            const float tableHeight = 720f;
+            const float tableWidth = tableHeight * 1.655f;
 
             if (photo != null)
             {
@@ -581,18 +598,15 @@ namespace Blackjack.Client
                 table.sprite = photo;
                 table.preserveAspect = true;
                 var tableRect = (RectTransform)table.transform;
-                SetSize(tableRect, 1324f, 800f);
+                SetSize(tableRect, tableWidth, tableHeight);
 
                 felt = tableRect;
-
-                // Measured off the image: the cloth begins 8.4% in from the left, 7.9%
-                // from the right, 14.6% down from the top and 18.7% up from the bottom.
-                _feltInset = new Vector4(112f, 118f, 106f, 150f);
+                _feltFraction = new Vector4(0.084f, 0.146f, 0.079f, 0.187f);
             }
             else
             {
                 var rim = NewBox("Rim", root, FeltEdge, 26, Rail, 6);
-                SetSize(rim, 1324f, 800f);
+                SetSize(rim, tableWidth, tableHeight);
 
                 felt = NewBox("Felt", rim, Felt, 20, default, 0);
                 felt.anchorMin = Vector2.zero;
@@ -605,10 +619,8 @@ namespace Blackjack.Client
                 vignette.raycastTarget = false;
                 Stretch((RectTransform)vignette.transform);
 
-                _feltInset = new Vector4(30f, 26f, 30f, 30f);
+                _feltFraction = new Vector4(0.03f, 0.03f, 0.03f, 0.03f);
             }
-
-            BuildHeader(felt);
 
             // What is on the cloth, in one column: the dealer, then the player. Placing
             // them as separate regions meant each was individually plausible and any
@@ -617,8 +629,8 @@ namespace Blackjack.Client
             // said where the space came from.
             var column = NewBox("Column", felt, new Color(0f, 0f, 0f, 0f), 0, default, 0);
             Stretch(column);
-            column.offsetMin = new Vector2(_feltInset.x, _feltInset.y);
-            column.offsetMax = new Vector2(-_feltInset.z, -(_feltInset.w + 46f));
+            column.offsetMin = new Vector2(tableWidth * _feltFraction.x, tableHeight * _feltFraction.w);
+            column.offsetMax = new Vector2(-tableWidth * _feltFraction.z, -tableHeight * _feltFraction.y);
 
             var flow = column.gameObject.AddComponent<VerticalLayoutGroup>();
             flow.childAlignment = TextAnchor.UpperCenter;
@@ -640,18 +652,24 @@ namespace Blackjack.Client
             BlackjackClientPlugin.Log.LogInfo("[Blackjack] table built");
         }
 
-        private static void BuildHeader(RectTransform felt)
+        /// <summary>
+        /// Title on the left, balance on the right, above the table rather than on it.
+        ///
+        /// Both were previously on the cloth, where worn green under a vignette is a
+        /// poor background for small text however it is coloured, and the top of an
+        /// oval is its narrowest part. On the dark above the table they are simply
+        /// legible.
+        /// </summary>
+        private static void BuildHeader(RectTransform parent)
         {
-            // Inside the cloth rather than on the rail: the rail is a photograph of
-            // wood, and text on it looks stuck to the furniture. Kept well in from the
-            // sides too, because the oval narrows towards the top.
-            var inset = _feltInset.y + 22f;
+            var bar = NewBox("Header", parent, new Color(0f, 0f, 0f, 0f), 0, default, 0);
+            SetSize(bar, 1340f, 36f);
 
-            var title = Label(felt, "BLACKJACK", 26f, Ink, TextAlignmentOptions.Left);
-            Anchor(title.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(_feltInset.x + 220f, -inset), new Vector2(400f, 34f));
+            var title = Label(bar, "BLACKJACK", 28f, Ink, TextAlignmentOptions.Left);
+            Anchor(title.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(210f, 0f), new Vector2(400f, 36f));
 
-            _balance = Label(felt, "", 22f, Ink, TextAlignmentOptions.Right);
-            Anchor(_balance.rectTransform, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-(_feltInset.z + 250f), -inset), new Vector2(460f, 34f));
+            _balance = Label(bar, "", 24f, Ink, TextAlignmentOptions.Right);
+            Anchor(_balance.rectTransform, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-210f, 0f), new Vector2(500f, 36f));
         }
 
         private static void BuildDealer(RectTransform column)
@@ -673,7 +691,7 @@ namespace Blackjack.Client
         private static void BuildHands(RectTransform column)
         {
             var area = NewBox("HandArea", column, new Color(0f, 0f, 0f, 0f), 0, default, 0);
-            SetSize(area, 1000f, 226f);
+            SetSize(area, 940f, 214f);
 
             var spot = NewImage("Spot", area, Gold);
             spot.sprite = Textures.Ring(Gold);
@@ -702,7 +720,7 @@ namespace Blackjack.Client
         private static void BuildBottom(RectTransform parent)
         {
             var stack = NewBox("Bottom", parent, new Color(0f, 0f, 0f, 0f), 0, default, 0);
-            SetSize(stack, 1360f, 262f);
+            SetSize(stack, 1360f, 254f);
 
             var column = stack.gameObject.AddComponent<VerticalLayoutGroup>();
             column.childAlignment = TextAnchor.UpperCenter;
@@ -715,10 +733,10 @@ namespace Blackjack.Client
             BuildBetting(stack);
 
             _message = Label(stack, "", 20f, Faint, TextAlignmentOptions.Center);
-            SetSize(_message.rectTransform, 1340f, 28f);
+            SetSize(_message.rectTransform, 1340f, 26f);
 
             _actionRow = NewRow("Actions", stack, 14f);
-            SetSize(_actionRow, 1340f, 50f);
+            SetSize(_actionRow, 1340f, 48f);
 
             _leave = Chip(stack, "LEAVE TABLE", 220f, Close);
             SetSize((RectTransform)_leave.transform, 220f, 44f);
@@ -727,7 +745,7 @@ namespace Blackjack.Client
         private static void BuildBetting(RectTransform parent)
         {
             var holder = NewBox("Betting", parent, new Color(0f, 0f, 0f, 0.26f), 12, new Color(1f, 1f, 1f, 0.06f), 2);
-            SetSize(holder, 1340f, 126f);
+            SetSize(holder, 1340f, 118f);
             _betControls = holder.gameObject;
 
             var column = holder.gameObject.AddComponent<VerticalLayoutGroup>();
