@@ -1,4 +1,4 @@
-using Blackjack.Game;
+﻿using Blackjack.Game;
 using SPTarkov.Server.Core.Models.Common;
 
 namespace Blackjack.Server.Tests;
@@ -31,6 +31,7 @@ public class WalletTests
             Assert.False(info.Tpl.IsEmpty, $"{wallet} has no template id.");
             Assert.True(info.MinBet > 0, $"{wallet} allows a zero bet.");
             Assert.True(info.MaxBet >= info.MinBet, $"{wallet} limits are inverted.");
+            Assert.Equal(int.MaxValue, info.MaxBet);
             Assert.False(string.IsNullOrWhiteSpace(info.Symbol));
         }
     }
@@ -59,12 +60,40 @@ public class WalletTests
         Assert.Equal(tpls.Count, tpls.Distinct().Count());
     }
 
+    /// <summary>
+    /// There is no house limit. A casino caps a bet to protect itself and there is no
+    /// house here to protect: the player is staking their own stash against a shoe.
+    /// What they can afford is the only ceiling, and that is a balance check, not a
+    /// rule.
+    /// </summary>
     [Theory]
     [InlineData(Wallet.Bitcoin, 11)]
     [InlineData(Wallet.LegaMedals, 6)]
     [InlineData(Wallet.GpCoins, 51)]
     [InlineData(Wallet.Dollars, 5001)]
-    public async Task StakesAboveAWalletCeilingAreRefused(Wallet wallet, int wager)
+    [InlineData(Wallet.Roubles, 5_000_000)]
+    public async Task AnyStakeThePlayerCanAffordIsAccepted(Wallet wallet, int wager)
+    {
+        var service = WithDeal("KS KH 9D 7C");
+        _bank.SetBalance(wallet, 10_000_000);
+
+        var response = await service.DealAsync(
+            new DealRequest { Wager = wager, Wallet = wallet.ToString() },
+            _session);
+
+        Assert.True(response.Ok, response.Error);
+        Assert.Equal([(wallet, wager)], _bank.Debits);
+    }
+
+    /// <summary>
+    /// The floor stays. A bet of nothing is not a bet, and the smallest meaningful
+    /// stake differs per wallet -- one rouble is noise, one bitcoin is not.
+    /// </summary>
+    [Theory]
+    [InlineData(Wallet.Roubles, 999)]
+    [InlineData(Wallet.Dollars, 9)]
+    [InlineData(Wallet.Bitcoin, 0)]
+    public async Task StakesBelowTheFloorAreRefusedBeforeAnyDebit(Wallet wallet, int wager)
     {
         var service = WithDeal("KS KH 9D 7C");
         _bank.SetBalance(wallet, 1_000_000);
@@ -74,7 +103,6 @@ public class WalletTests
             _session);
 
         Assert.False(response.Ok);
-        Assert.Contains("bets run from", response.Error);
         Assert.Empty(_bank.Debits);
     }
 

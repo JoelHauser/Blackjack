@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Newtonsoft.Json.Linq;
 using SPT.Common.Http;
 
@@ -29,7 +29,7 @@ namespace Blackjack.Client
         /// case-sensitively, so lowercase keys bind nothing and every field silently
         /// takes its default -- a wager of 0, refused for being out of range.
         /// </summary>
-        internal static JObject Deal(string wallet, int wager) =>
+        internal static JObject Deal(string wallet, long wager) =>
             Post("/blackjack/deal", "{\"Wallet\":\"" + wallet + "\",\"Wager\":" + wager + "}");
 
         internal static JObject Act(string action) =>

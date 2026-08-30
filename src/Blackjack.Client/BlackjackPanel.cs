@@ -11,28 +11,30 @@ namespace Blackjack.Client
     /// <summary>
     /// The table.
     ///
-    /// Built from Unity primitives rather than cloned from an EFT screen. Cloning was
-    /// right for the menu button, where matching the game exactly is the point and the
-    /// thing copied is one small widget; a whole screen drags in controllers that
-    /// expect a session behind them. It does borrow the game's font, because a panel in
-    /// Arial beside a menu in Bender looks broken.
+    /// Laid out in stacks rather than by arithmetic. Every overlap so far -- controls
+    /// on top of each other, an error message hidden behind the buttons -- came from
+    /// positioning siblings by hand at heights that were each individually plausible.
+    /// A layout group cannot make that mistake, so anything below the cloth belongs to
+    /// one.
     ///
     /// This side renders and asks. It never shuffles, never scores a hand and never
-    /// decides an outcome -- every one of those lives on the server, and the dealer's
-    /// hole card is not in the response until the hand is over, so it could not cheat
-    /// even by accident.
+    /// decides an outcome; the dealer's hole card is not in the response until the
+    /// hand is over, so it could not cheat even by accident.
     /// </summary>
     internal static class BlackjackPanel
     {
         private const string RootName = "BlackjackPanel";
 
-        private static readonly Color Felt = new Color(0.055f, 0.29f, 0.16f, 1f);
-        private static readonly Color FeltEdge = new Color(0.20f, 0.13f, 0.07f, 1f);
-        private static readonly Color Ink = new Color(0.90f, 0.89f, 0.84f, 1f);
-        private static readonly Color Faint = new Color(0.68f, 0.72f, 0.66f, 1f);
-        private static readonly Color Good = new Color(0.55f, 0.80f, 0.45f, 1f);
-        private static readonly Color Bad = new Color(0.85f, 0.35f, 0.32f, 1f);
-        private static readonly Color ChipFace = new Color(0.16f, 0.17f, 0.18f, 1f);
+        private static readonly Color Felt = new Color(0.055f, 0.30f, 0.17f, 1f);
+        private static readonly Color FeltEdge = new Color(0.21f, 0.13f, 0.07f, 1f);
+        private static readonly Color Rail = new Color(0.31f, 0.20f, 0.11f, 1f);
+        private static readonly Color Ink = new Color(0.92f, 0.91f, 0.86f, 1f);
+        private static readonly Color Faint = new Color(0.66f, 0.72f, 0.64f, 1f);
+        private static readonly Color Gold = new Color(0.78f, 0.68f, 0.38f, 0.90f);
+        private static readonly Color Good = new Color(0.55f, 0.82f, 0.45f, 1f);
+        private static readonly Color Bad = new Color(0.92f, 0.42f, 0.36f, 1f);
+        private static readonly Color ChipFace = new Color(0.13f, 0.14f, 0.15f, 0.96f);
+        private static readonly Color ChipEdge = new Color(0.32f, 0.33f, 0.34f, 1f);
         private static readonly Color ChipOn = new Color(0.62f, 0.50f, 0.14f, 1f);
 
         private static GameObject _root;
@@ -41,28 +43,27 @@ namespace Blackjack.Client
         private static TextMeshProUGUI _balance;
         private static TextMeshProUGUI _message;
         private static TextMeshProUGUI _dealerValue;
-        private static TextMeshProUGUI _wagerLabel;
+        private static TextMeshProUGUI _held;
+        private static TMP_InputField _wagerInput;
         private static RectTransform _dealerCards;
         private static RectTransform _handsRow;
-        private static RectTransform _walletRow;
         private static RectTransform _actionRow;
         private static GameObject _betControls;
-
-        private static readonly List<(string Wallet, GameObject Chip)> _wallets = new List<(string, GameObject)>();
-
-        private static TMP_InputField _wagerInput;
+        private static GameObject _bettingSpot;
         private static GameObject _confirm;
         private static TextMeshProUGUI _confirmText;
 
+        private static readonly List<(string Wallet, GameObject Chip)> Wallets = new List<(string, GameObject)>();
+
         /// <summary>
-        /// What the player holds, as of the last time the server said. Used to warn
-        /// before a bet is sent and to size ALL IN. The server checks again regardless;
-        /// this only saves a pointless round trip and a confusing refusal.
+        /// What the player holds, as of the last time the server said. Used for the
+        /// header, for ALL IN, and to catch a bet bigger than the stash before it is
+        /// sent. The server checks again regardless.
         /// </summary>
-        private static readonly Dictionary<string, long> _balances = new Dictionary<string, long>();
+        private static readonly Dictionary<string, long> Balances = new Dictionary<string, long>();
 
         private static string _wallet = "Roubles";
-        private static int _wager = 10_000;
+        private static long _wager = 10_000;
 
         internal static bool IsOpen => _root != null && _root.activeSelf;
 
@@ -92,12 +93,11 @@ namespace Blackjack.Client
                 }
 
                 _root.SetActive(true);
-
                 RefreshBalances();
 
-                // Resume rather than assume: a hand can still be live from a previous
+                // Resume rather than assume: a hand can still be live from an earlier
                 // visit, and /blackjack/state is what says so.
-                Render(BlackjackApi.State(), "");
+                Render(BlackjackApi.State(), true);
             }
             catch (Exception ex)
             {
@@ -119,61 +119,91 @@ namespace Blackjack.Client
             }
         }
 
-        // ------------------------------------------------------------------ actions
+        // ------------------------------------------------------------------- actions
 
         private static void Deal()
         {
-            // Caught here only to save a round trip and a refusal that reads worse than
-            // this does. The server checks the balance itself and is the authority.
-            if (_balances.TryGetValue(_wallet, out var held) && _wager > held)
+            if (_wager <= 0)
             {
-                _message.text = $"You have {held:N0} {Short(_wallet)}. That bet is more than you are carrying.";
-                _message.color = Bad;
+                Say("Type an amount to bet first.", Bad);
                 return;
             }
 
-            Render(BlackjackApi.Deal(_wallet, _wager), $"Dealing {_wager:N0} {_wallet}...");
+            // Caught here only to save a round trip and a refusal that reads worse than
+            // this does. The server checks the balance itself and is the authority.
+            if (Balances.TryGetValue(_wallet, out var held) && _wager > held)
+            {
+                Say($"You have {held:N0} {Short(_wallet)}. That is more than you are carrying.", Bad);
+                return;
+            }
+
+            // The field accepts fifteen digits so nobody is stopped mid-type, but a
+            // wager crosses the wire as an int. Saying so beats a request that binds to
+            // zero at the other end and comes back refused for being too small.
+            if (_wager > int.MaxValue)
+            {
+                Say($"The largest bet the table can take is {int.MaxValue:N0}.", Bad);
+                return;
+            }
+
+            Render(BlackjackApi.Deal(_wallet, _wager));
         }
 
-        private static void Act(string action)
-        {
-            Render(BlackjackApi.Act(action), action + "...");
-        }
+        private static void Act(string action) => Render(BlackjackApi.Act(action));
 
         private static void ChooseWallet(string wallet)
         {
             _wallet = wallet;
 
             // Valuables are staked by the piece and currency in thousands, so a wager
-            // carried over from roubles is nonsense in bitcoin. This is a convenience,
-            // not a rule -- the server owns the limits and will say so if this is out
-            // of range.
+            // carried over from roubles is nonsense in bitcoin.
             _wager = IsValuable(wallet) ? 1 : 10_000;
-
-            if (_wagerInput != null)
-            {
-                _wagerInput.SetTextWithoutNotify(_wager.ToString());
-            }
-
-            UpdateWagerLabel();
+            SetWagerText();
             HighlightWallet();
+            UpdateHeld();
         }
 
         private static bool IsValuable(string wallet) =>
             wallet == "Bitcoin" || wallet == "LegaMedals" || wallet == "GpCoins";
 
-        // ------------------------------------------------------------------ rendering
-
         /// <summary>
-        /// Draws whatever the server just said. Everything visible here comes out of
-        /// that response; nothing is inferred locally.
+        /// Asks before staking the lot. Every other control here is recoverable; this
+        /// one is a single click beside the field the player was already aiming at.
         /// </summary>
-        private static void Render(JObject response, string pending)
+        private static void AskBetEverything()
+        {
+            if (!Balances.TryGetValue(_wallet, out var held) || held <= 0)
+            {
+                Say($"You have no {Short(_wallet)} to bet.", Bad);
+                return;
+            }
+
+            _confirmText.text = $"Bet everything?\n\n<size=32>{held:N0}  {Short(_wallet)}</size>";
+            _confirm.SetActive(true);
+            _confirm.transform.SetAsLastSibling();
+        }
+
+        private static void CancelConfirm() => _confirm.SetActive(false);
+
+        private static void ConfirmBetEverything()
+        {
+            _confirm.SetActive(false);
+
+            if (Balances.TryGetValue(_wallet, out var held) && held > 0)
+            {
+                _wager = held;
+                SetWagerText();
+                UpdateHeld();
+            }
+        }
+
+        // ----------------------------------------------------------------- rendering
+
+        private static void Render(JObject response, bool quiet = false)
         {
             if (response == null)
             {
-                _message.text = "<color=#d9534f>No answer from the server.</color>  Is it running?";
-                _message.color = Bad;
+                Say("No answer from the server. Is it running?", Bad);
                 return;
             }
 
@@ -183,29 +213,20 @@ namespace Blackjack.Client
 
             if (!ok && !string.IsNullOrEmpty(error))
             {
-                _message.text = error;
-                _message.color = Bad;
+                Say(error, Bad);
             }
             else if (!string.IsNullOrEmpty(note))
             {
-                _message.text = note;
-                _message.color = Faint;
+                Say(note, Faint);
             }
-            else
+            else if (!quiet)
             {
-                _message.text = string.IsNullOrEmpty(pending) ? "" : "";
-                _message.color = Faint;
+                Say("", Faint);
             }
 
-            var balance = response["Balance"]?.ToObject<long>();
-            var wallet = response["Wallet"]?.ToString();
-            if (balance.HasValue)
-            {
-                _balance.text = $"{balance.Value:N0}  {wallet}";
-            }
-
-            // A settled hand has moved money, so what the player holds has changed.
             var round = response["Round"] as JObject;
+
+            // A settled hand has moved money, so what is held has changed.
             if ((round?["Phase"]?.ToString() ?? "") == "Settled")
             {
                 RefreshBalances();
@@ -224,7 +245,6 @@ namespace Blackjack.Client
 
             _betControls.SetActive(betting);
 
-            // Dealer
             var dealer = round?["Dealer"] as JObject;
             var dealerCards = dealer?["Cards"]?.ToObject<List<string>>() ?? new List<string>();
             foreach (var card in dealerCards)
@@ -244,9 +264,14 @@ namespace Blackjack.Client
                 ? ""
                 : (phase == "PlayerTurn" ? $"{dealerValue} + ?" : dealerValue.ToString());
 
-            // Player hands
             var hands = round?["PlayerHands"] as JArray;
-            if (hands != null)
+            var anyHands = hands != null && hands.Count > 0;
+
+            // The betting spot is only a spot while it is empty; once cards are on it,
+            // it is under them.
+            _bettingSpot.SetActive(!anyHands);
+
+            if (anyHands)
             {
                 var active = round["ActiveHandIndex"]?.ToObject<int>() ?? -1;
                 for (var i = 0; i < hands.Count; i++)
@@ -260,11 +285,18 @@ namespace Blackjack.Client
 
         private static void BuildHand(RectTransform parent, JObject hand, bool isActive)
         {
-            var column = NewPanel("Hand", parent, new Color(0f, 0f, 0f, isActive ? 0.22f : 0f));
+            var column = NewBox(
+                "Hand",
+                parent,
+                isActive ? new Color(0f, 0f, 0f, 0.28f) : new Color(0f, 0f, 0f, 0f),
+                12,
+                isActive ? Gold : new Color(0f, 0f, 0f, 0f),
+                isActive ? 2 : 0);
+
             var layout = column.gameObject.AddComponent<VerticalLayoutGroup>();
             layout.childAlignment = TextAnchor.UpperCenter;
-            layout.spacing = 8f;
-            layout.padding = new RectOffset(14, 14, 10, 10);
+            layout.spacing = 6f;
+            layout.padding = new RectOffset(16, 16, 12, 12);
             layout.childForceExpandHeight = false;
             layout.childForceExpandWidth = false;
             layout.childControlHeight = true;
@@ -274,7 +306,8 @@ namespace Blackjack.Client
             fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            var cardsRow = NewRow("Cards", column, 12f);
+            var cardsRow = NewRow("Cards", column, 10f);
+            SetSize(cardsRow, 0f, CardView.Height);
             foreach (var card in hand["Cards"]?.ToObject<List<string>>() ?? new List<string>())
             {
                 CardView.Build(cardsRow, card, _font);
@@ -285,23 +318,17 @@ namespace Blackjack.Client
             var outcome = hand["Outcome"]?.ToString();
             var wager = hand["Wager"]?.ToObject<long>() ?? 0;
 
-            var line = Label(column, $"{value}{(soft ? " soft" : "")}", 26f, Ink, TextAlignmentOptions.Center);
-            line.rectTransform.sizeDelta = new Vector2(0f, 32f);
-
-            var staked = Label(column, $"staked {wager:N0}", 18f, Faint, TextAlignmentOptions.Center);
-            staked.rectTransform.sizeDelta = new Vector2(0f, 24f);
+            SetSize(Label(column, $"{value}{(soft ? " soft" : "")}", 26f, Ink, TextAlignmentOptions.Center).rectTransform, 220f, 32f);
+            SetSize(Label(column, $"{wager:N0} {Short(_wallet)}", 17f, Faint, TextAlignmentOptions.Center).rectTransform, 220f, 22f);
 
             if (!string.IsNullOrEmpty(outcome) && outcome != "Pending")
             {
                 var won = outcome == "Win" || outcome == "Blackjack";
                 var pushed = outcome == "Push";
-                var result = Label(
-                    column,
-                    outcome.ToUpperInvariant(),
-                    24f,
-                    pushed ? Faint : (won ? Good : Bad),
-                    TextAlignmentOptions.Center);
-                result.rectTransform.sizeDelta = new Vector2(0f, 30f);
+                SetSize(
+                    Label(column, outcome.ToUpperInvariant(), 24f, pushed ? Faint : (won ? Good : Bad), TextAlignmentOptions.Center).rectTransform,
+                    220f,
+                    30f);
             }
         }
 
@@ -323,47 +350,87 @@ namespace Blackjack.Client
                     }
 
                     var captured = action;
-                    Chip(_actionRow, action.ToUpperInvariant(), 150f, () => Act(captured));
+                    Chip(_actionRow, action.ToUpperInvariant(), 160f, () => Act(captured));
                 }
 
                 return;
             }
 
-            Chip(_actionRow, "DEAL", 190f, Deal);
+            Chip(_actionRow, "DEAL", 200f, Deal);
         }
+
+        private static void Say(string text, Color colour)
+        {
+            if (_message != null)
+            {
+                _message.text = text;
+                _message.color = colour;
+            }
+        }
+
+        // ------------------------------------------------------------------ balances
 
         private static void RefreshBalances()
         {
-            var ping = BlackjackApi.Ping();
-            var balances = ping?["Balances"];
+            var balances = BlackjackApi.Ping()?["Balances"];
             if (balances == null)
             {
                 return;
             }
 
-            _balances.Clear();
+            Balances.Clear();
             foreach (var entry in balances.Children<JProperty>())
             {
-                _balances[entry.Name] = entry.Value.ToObject<long>();
+                Balances[entry.Name] = entry.Value.ToObject<long>();
             }
 
-            UpdateWagerLabel();
+            UpdateHeld();
         }
 
-        private static void SetPreferredHeight(RectTransform rect, float height)
+        /// <summary>
+        /// The header and the line beside the field both say what is held. Advisory
+        /// only: the server decides what is a legal bet.
+        /// </summary>
+        private static void UpdateHeld()
         {
-            var element = rect.gameObject.AddComponent<LayoutElement>();
-            element.preferredHeight = height;
-            element.minHeight = height;
+            var known = Balances.TryGetValue(_wallet, out var held);
+
+            if (_balance != null)
+            {
+                _balance.text = known ? $"{held:N0}  {Short(_wallet)}" : "";
+            }
+
+            if (_held == null)
+            {
+                return;
+            }
+
+            if (!known)
+            {
+                _held.text = "";
+                return;
+            }
+
+            var beyond = _wager > held;
+            _held.text = beyond ? $"you have {held:N0} -- not enough" : $"you have {held:N0}";
+            _held.color = beyond ? Bad : Faint;
         }
 
-        private static void SetPreferredSize(RectTransform rect, float width, float height)
+        private static void SetWagerText()
         {
-            var element = rect.gameObject.AddComponent<LayoutElement>();
-            element.preferredWidth = width;
-            element.minWidth = width;
-            element.preferredHeight = height;
-            element.minHeight = height;
+            if (_wagerInput != null)
+            {
+                _wagerInput.SetTextWithoutNotify(_wager.ToString());
+            }
+        }
+
+        private static void OnWagerTyped(string typed)
+        {
+            // An empty or half-typed box is not an error worth shouting about; it is
+            // simply not a bet yet. Parsed as long, because a stash holds more than an
+            // int and refusing to let someone type their own balance would be absurd.
+            _wager = long.TryParse(typed, out var value) && value > 0 ? value : 0;
+            UpdateHeld();
         }
 
         // ------------------------------------------------------------------ building
@@ -381,175 +448,178 @@ namespace Blackjack.Client
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
 
-            // Match height, not a blend of both. Blending makes the table grow with
-            // screen width, so an ultrawide gets a table stretched across it while a
-            // 16:9 screen gets a smaller one -- the same layout at two different sizes.
-            // Tying it to height keeps the table one size and lets the extra width on a
-            // wide monitor stay as empty space around it, which is what a table sitting
-            // on a floor actually looks like.
+            // Match height, not a blend. Blending grows the table with screen width, so
+            // an ultrawide gets it stretched across the monitor while a 16:9 screen gets
+            // a smaller one. Tying it to height keeps one table and lets the extra width
+            // stay as empty space, which is what a table on a floor looks like anyway.
             scaler.matchWidthOrHeight = 1f;
 
             _root = canvasObject;
 
-            // Dimmed backdrop, which also swallows clicks so the menu behind cannot be
-            // operated while the table is open.
-            var backdrop = NewPanel("Backdrop", canvasObject.transform, new Color(0f, 0f, 0f, 0.82f));
+            var backdrop = NewBox("Backdrop", canvasObject.transform, new Color(0f, 0f, 0f, 0.86f), 0, default, 0);
             Stretch(backdrop);
 
-            // The table: a dark wooden rim with felt inside it.
-            var rim = NewPanel("Rim", canvasObject.transform, FeltEdge);
+            var rim = NewBox("Rim", canvasObject.transform, FeltEdge, 26, Rail, 6);
             rim.anchorMin = rim.anchorMax = new Vector2(0.5f, 0.5f);
             rim.pivot = new Vector2(0.5f, 0.5f);
-            rim.sizeDelta = new Vector2(1500f, 900f);
+            rim.sizeDelta = new Vector2(1460f, 900f);
 
-            var felt = NewPanel("Felt", rim, Felt);
+            var felt = NewBox("Felt", rim, Felt, 20, default, 0);
             felt.anchorMin = Vector2.zero;
             felt.anchorMax = Vector2.one;
-            felt.offsetMin = new Vector2(14f, 14f);
-            felt.offsetMax = new Vector2(-14f, -14f);
+            felt.offsetMin = new Vector2(18f, 18f);
+            felt.offsetMax = new Vector2(-18f, -18f);
 
-            BuildConfirm(canvasObject.transform);
+            // Lit from the middle rather than flat. The cheapest thing that stops a
+            // green rectangle reading as a green rectangle.
+            var vignette = NewImage("Vignette", felt, Color.white);
+            vignette.sprite = Textures.Vignette(new Color(0f, 0f, 0f, 0.55f));
+            vignette.raycastTarget = false;
+            Stretch((RectTransform)vignette.transform);
 
             BuildHeader(felt);
             BuildDealer(felt);
-            BuildRules(felt);
-            BuildPlayerArea(felt);
-            BuildBetting(felt);
-            BuildFooter(felt);
+            BuildTableMarkings(felt);
+            BuildHands(felt);
+            BuildBottom(felt);
+            BuildConfirm(canvasObject.transform);
 
             BlackjackClientPlugin.Log.LogInfo("[Blackjack] table built");
-        }
-
-        /// <summary>
-        /// The are-you-sure box. Built once and hidden, rather than made and destroyed
-        /// each time, so there is nothing to leak and nothing to rebuild mid-click.
-        ///
-        /// Its own dimmed backdrop covers the table and swallows clicks, so the answer
-        /// has to be given before anything else can be touched.
-        /// </summary>
-        private static void BuildConfirm(Transform parent)
-        {
-            var root = NewPanel("Confirm", parent, new Color(0f, 0f, 0f, 0.6f));
-            Stretch(root);
-            _confirm = root.gameObject;
-
-            var box = NewPanel("Box", root, new Color(0.10f, 0.10f, 0.11f, 0.99f));
-            box.anchorMin = box.anchorMax = new Vector2(0.5f, 0.5f);
-            box.pivot = new Vector2(0.5f, 0.5f);
-            box.sizeDelta = new Vector2(560f, 250f);
-
-            _confirmText = Label(box, "", 24f, Ink, TextAlignmentOptions.Center);
-            Anchor(_confirmText.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -80f), new Vector2(500f, 120f));
-
-            var buttons = NewRow("Buttons", box, 16f);
-            Anchor(buttons, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 44f), new Vector2(500f, 48f));
-
-            Chip(buttons, "BET IT ALL", 200f, ConfirmBetEverything);
-            Chip(buttons, "CANCEL", 160f, CancelConfirm);
-
-            _confirm.SetActive(false);
         }
 
         private static void BuildHeader(RectTransform felt)
         {
             var title = Label(felt, "BLACKJACK", 30f, Ink, TextAlignmentOptions.Left);
-            Anchor(title.rectTransform, new Vector2(0f, 1f), new Vector2(0.5f, 1f), new Vector2(30f, -54f), new Vector2(0f, 44f));
+            Anchor(title.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(220f, -46f), new Vector2(400f, 40f));
 
             _balance = Label(felt, "", 24f, Ink, TextAlignmentOptions.Right);
-            Anchor(_balance.rectTransform, new Vector2(0.5f, 1f), new Vector2(1f, 1f), new Vector2(-30f, -54f), new Vector2(0f, 44f));
+            Anchor(_balance.rectTransform, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-250f, -46f), new Vector2(460f, 40f));
         }
 
         private static void BuildDealer(RectTransform felt)
         {
-            var label = Label(felt, "DEALER", 20f, Faint, TextAlignmentOptions.Center);
-            Anchor(label.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -104f), new Vector2(400f, 26f));
+            var label = Label(felt, "DEALER", 19f, Faint, TextAlignmentOptions.Center);
+            Anchor(label.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -96f), new Vector2(400f, 24f));
 
-            _dealerCards = NewRow("DealerCards", felt, 12f);
-            Anchor(_dealerCards, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -150f), new Vector2(900f, CardView.Height));
+            _dealerCards = NewRow("DealerCards", felt, 10f);
+            Anchor(_dealerCards, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -196f), new Vector2(900f, CardView.Height));
 
             _dealerValue = Label(felt, "", 26f, Ink, TextAlignmentOptions.Center);
-            Anchor(_dealerValue.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -292f), new Vector2(300f, 32f));
+            Anchor(_dealerValue.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -288f), new Vector2(300f, 32f));
         }
 
-        private static void BuildRules(RectTransform felt)
+        private static void BuildTableMarkings(RectTransform felt)
         {
-            var line = Label(felt, "BLACKJACK PAYS 3 TO 2      DEALER MUST STAND ON 17", 19f, new Color(0.75f, 0.70f, 0.45f, 0.85f), TextAlignmentOptions.Center);
-            Anchor(line.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 60f), new Vector2(1000f, 28f));
+            var arc = Label(felt, "BLACKJACK PAYS 3 TO 2      DEALER MUST STAND ON 17", 19f, Gold, TextAlignmentOptions.Center);
+            Anchor(arc.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -334f), new Vector2(1000f, 26f));
+
+            var spot = NewImage("Spot", felt, Gold);
+            spot.sprite = Textures.Ring(Gold);
+            spot.raycastTarget = false;
+            Anchor((RectTransform)spot.transform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -452f), new Vector2(156f, 156f));
+            _bettingSpot = spot.gameObject;
+
+            var place = Label((RectTransform)spot.transform, "PLACE\nYOUR BET", 15f, Gold, TextAlignmentOptions.Center);
+            place.enableWordWrapping = true;
+            Stretch(place.rectTransform);
         }
 
-        private static void BuildPlayerArea(RectTransform felt)
+        private static void BuildHands(RectTransform felt)
         {
-            _handsRow = NewRow("Hands", felt, 40f);
-            Anchor(_handsRow, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -110f), new Vector2(1300f, 260f));
+            _handsRow = NewRow("Hands", felt, 36f);
+            Anchor(_handsRow, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -466f), new Vector2(1300f, 250f));
         }
 
         /// <summary>
-        /// Wallet chips on one row, the wager on the next.
+        /// Everything under the cloth, in one stack: betting bar, message, buttons.
         ///
-        /// Both rows are laid out by Unity rather than by arithmetic. The first attempt
-        /// positioned every control by hand inside one bar, mixing anchors as it went,
-        /// and they landed on top of each other. A layout group cannot make that
-        /// mistake.
+        /// Stacked rather than placed, because placing them by hand is exactly how the
+        /// error message ended up behind the DEAL button.
         /// </summary>
-        private static void BuildBetting(RectTransform felt)
+        private static void BuildBottom(RectTransform felt)
         {
-            var holder = NewPanel("Betting", felt, new Color(0f, 0f, 0f, 0.18f));
-            Anchor(holder, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 208f), new Vector2(1320f, 130f));
+            var stack = NewBox("Bottom", felt, new Color(0f, 0f, 0f, 0f), 0, default, 0);
+            stack.anchorMin = stack.anchorMax = new Vector2(0.5f, 0f);
+            stack.pivot = new Vector2(0.5f, 0f);
+            stack.anchoredPosition = new Vector2(0f, 22f);
+            stack.sizeDelta = new Vector2(1360f, 300f);
+
+            var column = stack.gameObject.AddComponent<VerticalLayoutGroup>();
+            column.childAlignment = TextAnchor.LowerCenter;
+            column.spacing = 10f;
+            column.childForceExpandWidth = false;
+            column.childForceExpandHeight = false;
+            column.childControlWidth = false;
+            column.childControlHeight = false;
+
+            BuildBetting(stack);
+
+            _message = Label(stack, "", 20f, Faint, TextAlignmentOptions.Center);
+            SetSize(_message.rectTransform, 1340f, 28f);
+
+            _actionRow = NewRow("Actions", stack, 14f);
+            SetSize(_actionRow, 1340f, 50f);
+
+            SetSize((RectTransform)Chip(stack, "LEAVE TABLE", 220f, Close).transform, 220f, 44f);
+        }
+
+        private static void BuildBetting(RectTransform parent)
+        {
+            var holder = NewBox("Betting", parent, new Color(0f, 0f, 0f, 0.26f), 12, new Color(1f, 1f, 1f, 0.06f), 2);
+            SetSize(holder, 1340f, 126f);
             _betControls = holder.gameObject;
 
             var column = holder.gameObject.AddComponent<VerticalLayoutGroup>();
             column.childAlignment = TextAnchor.MiddleCenter;
             column.spacing = 10f;
-            column.padding = new RectOffset(16, 16, 12, 12);
+            column.padding = new RectOffset(14, 14, 12, 12);
             column.childForceExpandWidth = false;
             column.childForceExpandHeight = false;
-            column.childControlWidth = true;
-            column.childControlHeight = true;
+            column.childControlWidth = false;
+            column.childControlHeight = false;
 
-            _walletRow = NewRow("Wallets", holder, 8f);
-            SetPreferredHeight(_walletRow, 46f);
+            var walletRow = NewRow("Wallets", holder, 8f);
+            SetSize(walletRow, 1300f, 44f);
 
             foreach (var wallet in new[] { "Roubles", "Dollars", "Euros", "GpCoins", "Bitcoin", "LegaMedals" })
             {
                 var captured = wallet;
-                var chip = Chip(_walletRow, Short(wallet), 132f, () => ChooseWallet(captured));
-                _wallets.Add((wallet, chip));
+                Wallets.Add((wallet, Chip(walletRow, Short(wallet), 132f, () => ChooseWallet(captured))));
             }
 
             var betRow = NewRow("Bet", holder, 12f);
-            SetPreferredHeight(betRow, 48f);
+            SetSize(betRow, 1300f, 46f);
 
-            var caption = Label(betRow, "BET", 20f, Faint, TextAlignmentOptions.Right);
-            SetPreferredSize(caption.rectTransform, 60f, 34f);
-
+            SetSize(Label(betRow, "BET", 20f, Faint, TextAlignmentOptions.Right).rectTransform, 56f, 32f);
             BuildWagerInput(betRow);
-
             Chip(betRow, "ALL IN", 120f, AskBetEverything);
 
-            _wagerLabel = Label(betRow, "", 20f, Faint, TextAlignmentOptions.Left);
-            SetPreferredSize(_wagerLabel.rectTransform, 420f, 34f);
+            _held = Label(betRow, "", 19f, Faint, TextAlignmentOptions.Left);
+            SetSize(_held.rectTransform, 360f, 32f);
 
             HighlightWallet();
-            UpdateWagerLabel();
         }
 
         /// <summary>
-        /// A field the player types into, rather than a stepper they wear out. Getting
-        /// from a thousand to five hundred thousand was ninety clicks.
+        /// A field the player types into, rather than a stepper they wear out.
+        ///
+        /// Wide, and centred. The first version was Unity's default hundred-pixel
+        /// square with the text left-aligned, so anything past five digits scrolled out
+        /// of sight while it was being typed.
         /// </summary>
         private static void BuildWagerInput(Transform parent)
         {
-            var frame = NewPanel("WagerInput", parent, new Color(0.10f, 0.11f, 0.11f, 1f));
-            SetPreferredSize(frame, 260f, 44f);
+            var frame = NewBox("WagerInput", parent, new Color(0.08f, 0.09f, 0.09f, 1f), 8, ChipEdge, 2);
+            SetSize(frame, 340f, 44f);
 
             var viewport = new GameObject("TextArea", typeof(RectTransform), typeof(RectMask2D));
             viewport.transform.SetParent(frame, false);
             var viewportRect = (RectTransform)viewport.transform;
             Stretch(viewportRect);
-            viewportRect.offsetMin = new Vector2(12f, 4f);
-            viewportRect.offsetMax = new Vector2(-12f, -4f);
+            viewportRect.offsetMin = new Vector2(10f, 5f);
+            viewportRect.offsetMax = new Vector2(-10f, -5f);
 
-            var text = Label(viewportRect, string.Empty, 24f, Ink, TextAlignmentOptions.Left);
+            var text = Label(viewportRect, string.Empty, 22f, Ink, TextAlignmentOptions.Center);
             Stretch(text.rectTransform);
             text.raycastTarget = true;
 
@@ -557,9 +627,12 @@ namespace Blackjack.Client
             input.textViewport = viewportRect;
             input.textComponent = text;
             input.fontAsset = _font;
-            input.pointSize = 24f;
+            input.pointSize = 22f;
             input.contentType = TMP_InputField.ContentType.IntegerNumber;
-            input.characterLimit = 12;
+
+            // Long enough for any stash. No cap here on purpose: what counts as a legal
+            // bet is the server's business, not this field's.
+            input.characterLimit = 15;
             input.restoreOriginalTextOnEscape = true;
             input.text = _wager.ToString();
             input.onValueChanged.AddListener(OnWagerTyped);
@@ -567,115 +640,40 @@ namespace Blackjack.Client
             _wagerInput = input;
         }
 
-        private static void OnWagerTyped(string typed)
+        private static void BuildConfirm(Transform parent)
         {
-            // An empty or half-typed box is not an error worth shouting about; it is
-            // simply not a bet yet.
-            if (int.TryParse(typed, out var value) && value > 0)
-            {
-                _wager = value;
-            }
+            var root = NewBox("Confirm", parent, new Color(0f, 0f, 0f, 0.66f), 0, default, 0);
+            Stretch(root);
+            _confirm = root.gameObject;
 
-            UpdateWagerLabel();
-        }
+            var box = NewBox("Box", root, new Color(0.10f, 0.10f, 0.11f, 0.99f), 16, ChipEdge, 2);
+            box.anchorMin = box.anchorMax = new Vector2(0.5f, 0.5f);
+            box.pivot = new Vector2(0.5f, 0.5f);
+            box.sizeDelta = new Vector2(600f, 260f);
 
-        /// <summary>
-        /// Asks before staking the lot.
-        ///
-        /// Every other control here is recoverable -- a mistyped wager is retyped, a
-        /// wrong wallet is reselected. This one is a single click that stakes
-        /// everything the player owns of something, sitting next to the field they
-        /// were already aiming at, so it gets a question first.
-        /// </summary>
-        private static void AskBetEverything()
-        {
-            if (!_balances.TryGetValue(_wallet, out var held) || held <= 0)
-            {
-                _message.text = $"You have no {Short(_wallet)} to bet.";
-                _message.color = Bad;
-                return;
-            }
+            _confirmText = Label(box, "", 24f, Ink, TextAlignmentOptions.Center);
+            _confirmText.enableWordWrapping = true;
+            Anchor(_confirmText.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -86f), new Vector2(540f, 130f));
 
-            _confirmText.text = $"Bet everything?\n\n<size=30>{held:N0}  {Short(_wallet)}</size>";
-            _confirm.SetActive(true);
-            _confirm.transform.SetAsLastSibling();
-        }
+            var buttons = NewRow("Buttons", box, 16f);
+            Anchor(buttons, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 46f), new Vector2(540f, 46f));
 
-        private static void CancelConfirm() => _confirm.SetActive(false);
+            Chip(buttons, "BET IT ALL", 210f, ConfirmBetEverything);
+            Chip(buttons, "CANCEL", 170f, CancelConfirm);
 
-        /// <summary>
-        /// Whether all of it is a legal bet is still the server's call -- most wallets
-        /// cap well below a full stash, and it will say so by name.
-        /// </summary>
-        private static void ConfirmBetEverything()
-        {
             _confirm.SetActive(false);
-
-            if (!_balances.TryGetValue(_wallet, out var held) || held <= 0)
-            {
-                return;
-            }
-
-            _wager = (int)Math.Min(held, int.MaxValue);
-
-            if (_wagerInput != null)
-            {
-                _wagerInput.SetTextWithoutNotify(_wager.ToString());
-            }
-
-            UpdateWagerLabel();
         }
 
-        private static void BuildFooter(RectTransform felt)
-        {
-            _actionRow = NewRow("Actions", felt, 14f);
-            Anchor(_actionRow, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 92f), new Vector2(1200f, 54f));
-
-            _message = Label(felt, "", 20f, Faint, TextAlignmentOptions.Center);
-            Anchor(_message.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 52f), new Vector2(1300f, 26f));
-
-            Chip(felt, "LEAVE TABLE", 200f, Close, null, new Vector2(0.5f, 0f), new Vector2(0f, 18f));
-        }
-
-        // ------------------------------------------------------------------ widgets
-
-        /// <summary>
-        /// Says what is held and whether the bet fits inside it. Advisory: the server
-        /// decides, and it also enforces per-wallet minimums and maximums this does not
-        /// know about.
-        /// </summary>
-        private static void UpdateWagerLabel()
-        {
-            if (_wagerLabel == null)
-            {
-                return;
-            }
-
-            if (!_balances.TryGetValue(_wallet, out var held))
-            {
-                _wagerLabel.text = "";
-                return;
-            }
-
-            if (_wager > held)
-            {
-                _wagerLabel.text = $"you have {held:N0} -- not enough";
-                _wagerLabel.color = Bad;
-                return;
-            }
-
-            _wagerLabel.text = $"you have {held:N0}";
-            _wagerLabel.color = Faint;
-        }
+        // ------------------------------------------------------------------- widgets
 
         private static void HighlightWallet()
         {
-            foreach (var (wallet, chip) in _wallets)
+            foreach (var (wallet, chip) in Wallets)
             {
                 var image = chip?.GetComponent<Image>();
                 if (image != null)
                 {
-                    image.color = wallet == _wallet ? ChipOn : ChipFace;
+                    image.sprite = Textures.RoundedBox(8, wallet == _wallet ? ChipOn : ChipFace, ChipEdge, 2);
                 }
             }
         }
@@ -691,31 +689,10 @@ namespace Blackjack.Client
             _ => wallet.ToUpperInvariant(),
         };
 
-        private static GameObject Chip(
-            Transform parent,
-            string text,
-            float width,
-            Action onClick,
-            Vector2? anchoredPosition = null,
-            Vector2? anchor = null,
-            Vector2? offset = null)
+        private static GameObject Chip(Transform parent, string text, float width, Action onClick)
         {
-            var rect = NewPanel("Chip_" + text, parent, ChipFace);
-            rect.sizeDelta = new Vector2(width, 46f);
-
-            if (anchor.HasValue)
-            {
-                rect.anchorMin = rect.anchorMax = anchor.Value;
-                rect.pivot = anchor.Value;
-                rect.anchoredPosition = offset ?? Vector2.zero;
-                rect.sizeDelta = new Vector2(width, 46f);
-            }
-            else if (anchoredPosition.HasValue)
-            {
-                rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
-                rect.pivot = new Vector2(0.5f, 0.5f);
-                rect.anchoredPosition = anchoredPosition.Value;
-            }
+            var rect = NewBox("Chip_" + text, parent, ChipFace, 8, ChipEdge, 2);
+            SetSize(rect, width, 44f);
 
             var label = Label(rect, text, 21f, Ink, TextAlignmentOptions.Center);
             Stretch(label.rectTransform);
@@ -747,12 +724,31 @@ namespace Blackjack.Client
             return label;
         }
 
-        private static RectTransform NewPanel(string name, Transform parent, Color colour)
+        private static Image NewImage(string name, Transform parent, Color colour)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
             go.transform.SetParent(parent, false);
-            go.GetComponent<Image>().color = colour;
-            return (RectTransform)go.transform;
+            var image = go.GetComponent<Image>();
+            image.color = colour;
+            return image;
+        }
+
+        /// <summary>A rounded panel. Radius zero means a plain rectangle.</summary>
+        private static RectTransform NewBox(string name, Transform parent, Color fill, int radius, Color border, int borderWidth)
+        {
+            var image = NewImage(name, parent, Color.white);
+
+            if (radius > 0)
+            {
+                image.sprite = Textures.RoundedBox(radius, fill, border, borderWidth);
+                image.type = Image.Type.Sliced;
+            }
+            else
+            {
+                image.color = fill;
+            }
+
+            return (RectTransform)image.transform;
         }
 
         private static RectTransform NewRow(string name, Transform parent, float spacing)
@@ -769,6 +765,22 @@ namespace Blackjack.Client
             layout.childControlHeight = false;
 
             return (RectTransform)go.transform;
+        }
+
+        /// <summary>
+        /// Sets a size that both a layout group and a bare RectTransform will respect.
+        /// These rows do not control their children's size, so sizeDelta is what counts
+        /// -- a LayoutElement on its own is silently ignored, which is how the wager
+        /// field ended up as Unity's default hundred-pixel square.
+        /// </summary>
+        private static void SetSize(RectTransform rect, float width, float height)
+        {
+            rect.sizeDelta = new Vector2(width, height);
+
+            var element = rect.gameObject.GetComponent<LayoutElement>() ?? rect.gameObject.AddComponent<LayoutElement>();
+            element.preferredWidth = width;
+            element.preferredHeight = height;
+            element.minHeight = height;
         }
 
         private static void Anchor(RectTransform rect, Vector2 min, Vector2 max, Vector2 position, Vector2 size)
@@ -801,10 +813,6 @@ namespace Blackjack.Client
             }
         }
 
-        /// <summary>
-        /// EFT's own UI font, taken off a label already on screen. Falling back to TMP's
-        /// default keeps the table readable rather than blank if none can be found.
-        /// </summary>
         private static TMP_FontAsset BorrowFont()
         {
             try

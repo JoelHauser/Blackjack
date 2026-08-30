@@ -1,4 +1,4 @@
-using Blackjack.Game;
+﻿using Blackjack.Game;
 using SPTarkov.Server.Core.Models.Common;
 
 namespace Blackjack.Server.Tests;
@@ -140,9 +140,9 @@ public class MoneyFlowTests
 
     [Theory]
     [InlineData(0)]
+    [InlineData(-1)]
     [InlineData(999)]
-    [InlineData(500_001)]
-    public async Task WagersOutsideTableLimitsRefuseBeforeAnyDebit(int wager)
+    public async Task WagersBelowTheFloorRefuseBeforeAnyDebit(int wager)
     {
         var service = WithDeal("KS KH 9D 7C");
         var response = await service.DealAsync(Bet(wager), _session);

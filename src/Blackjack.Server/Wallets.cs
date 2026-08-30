@@ -1,4 +1,4 @@
-using SPTarkov.Server.Core.Models.Common;
+﻿using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Enums;
 
 namespace Blackjack.Server;
@@ -63,15 +63,17 @@ public sealed record WalletInfo(
 
     private static readonly Dictionary<Wallet, WalletInfo> Table = new()
     {
-        [Wallet.Roubles] = new(Wallet.Roubles, WalletKind.Currency, Money.ROUBLES, "₽", "Roubles", 1_000, 500_000, 1_000),
-        [Wallet.Dollars] = new(Wallet.Dollars, WalletKind.Currency, Money.DOLLARS, "$", "Dollars", 10, 5_000, 10),
-        [Wallet.Euros] = new(Wallet.Euros, WalletKind.Currency, Money.EUROS, "€", "Euros", 10, 5_000, 10),
+        // No ceiling. A house limit is what a casino imposes to protect itself, and
+        // there is no house here to protect -- the player is gambling their own stash
+        // against a shoe, and capping it only stops them doing what they came to do.
+        // The floor stays: a bet of zero is not a bet, and one rouble is not either.
+        [Wallet.Roubles] = new(Wallet.Roubles, WalletKind.Currency, Money.ROUBLES, "₽", "Roubles", 1_000, int.MaxValue, 1_000),
+        [Wallet.Dollars] = new(Wallet.Dollars, WalletKind.Currency, Money.DOLLARS, "$", "Dollars", 10, int.MaxValue, 10),
+        [Wallet.Euros] = new(Wallet.Euros, WalletKind.Currency, Money.EUROS, "€", "Euros", 10, int.MaxValue, 10),
 
-        // Valuables are staked by the piece. The ceilings are about what a player could
-        // plausibly hold and be willing to lose, not anything the engine cares about.
-        [Wallet.GpCoins] = new(Wallet.GpCoins, WalletKind.Valuable, Money.GP, "GP", "GP coins", 1, 50, 1),
-        [Wallet.Bitcoin] = new(Wallet.Bitcoin, WalletKind.Valuable, ItemTpl.BARTER_PHYSICAL_BITCOIN, "₿", "Bitcoin", 1, 10, 1),
-        [Wallet.LegaMedals] = new(Wallet.LegaMedals, WalletKind.Valuable, ItemTpl.BARTER_LEGA_MEDAL, "LEGA", "Lega medals", 1, 5, 1),
+        [Wallet.GpCoins] = new(Wallet.GpCoins, WalletKind.Valuable, Money.GP, "GP", "GP coins", 1, int.MaxValue, 1),
+        [Wallet.Bitcoin] = new(Wallet.Bitcoin, WalletKind.Valuable, ItemTpl.BARTER_PHYSICAL_BITCOIN, "₿", "Bitcoin", 1, int.MaxValue, 1),
+        [Wallet.LegaMedals] = new(Wallet.LegaMedals, WalletKind.Valuable, ItemTpl.BARTER_LEGA_MEDAL, "LEGA", "Lega medals", 1, int.MaxValue, 1),
     };
 
     public static WalletInfo For(Wallet wallet) => Table[wallet];
