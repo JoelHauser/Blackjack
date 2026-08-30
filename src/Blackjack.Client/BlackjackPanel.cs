@@ -50,6 +50,7 @@ namespace Blackjack.Client
         private static RectTransform _actionRow;
         private static GameObject _betControls;
         private static GameObject _bettingSpot;
+        private static GameObject _leave;
         private static GameObject _confirm;
         private static TextMeshProUGUI _confirmText;
 
@@ -244,6 +245,14 @@ namespace Blackjack.Client
             var betting = phase == "AwaitingBet" || phase == "Settled";
 
             _betControls.SetActive(betting);
+
+            // No leaving mid-hand. The stake is already gone and the round is still
+            // owed: walking away would look to the player like the money vanished, and
+            // the table would be waiting for them when they came back anyway.
+            if (_leave != null)
+            {
+                _leave.SetActive(betting);
+            }
 
             var dealer = round?["Dealer"] as JObject;
             var dealerCards = dealer?["Cards"]?.ToObject<List<string>>() ?? new List<string>();
@@ -478,10 +487,29 @@ namespace Blackjack.Client
             Stretch((RectTransform)vignette.transform);
 
             BuildHeader(felt);
-            BuildDealer(felt);
-            BuildTableMarkings(felt);
-            BuildHands(felt);
-            BuildBottom(felt);
+
+            // Everything on the cloth in one column. Placing the dealer, the hands and
+            // the controls as separate regions meant each was individually plausible
+            // and any two could still collide -- a settled hand's BLACKJACK label
+            // landed on the betting bar, because a won hand is taller than a live one
+            // and nothing said where the space came from. A layout group settles it.
+            var column = NewBox("Column", felt, new Color(0f, 0f, 0f, 0f), 0, default, 0);
+            Stretch(column);
+            column.offsetMin = new Vector2(30f, 22f);
+            column.offsetMax = new Vector2(-30f, -84f);
+
+            var flow = column.gameObject.AddComponent<VerticalLayoutGroup>();
+            flow.childAlignment = TextAnchor.UpperCenter;
+            flow.spacing = 8f;
+            flow.childForceExpandWidth = false;
+            flow.childForceExpandHeight = false;
+            flow.childControlWidth = false;
+            flow.childControlHeight = false;
+
+            BuildDealer(column);
+            BuildTableMarkings(column);
+            BuildHands(column);
+            BuildBottom(column);
             BuildConfirm(canvasObject.transform);
 
             BlackjackClientPlugin.Log.LogInfo("[Blackjack] table built");
@@ -496,38 +524,50 @@ namespace Blackjack.Client
             Anchor(_balance.rectTransform, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-250f, -46f), new Vector2(460f, 40f));
         }
 
-        private static void BuildDealer(RectTransform felt)
+        private static void BuildDealer(RectTransform column)
         {
-            var label = Label(felt, "DEALER", 19f, Faint, TextAlignmentOptions.Center);
-            Anchor(label.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -96f), new Vector2(400f, 24f));
+            SetSize(Label(column, "DEALER", 19f, Faint, TextAlignmentOptions.Center).rectTransform, 400f, 24f);
 
-            _dealerCards = NewRow("DealerCards", felt, 10f);
-            Anchor(_dealerCards, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -196f), new Vector2(900f, CardView.Height));
+            _dealerCards = NewRow("DealerCards", column, 10f);
+            SetSize(_dealerCards, 900f, CardView.Height);
 
-            _dealerValue = Label(felt, "", 26f, Ink, TextAlignmentOptions.Center);
-            Anchor(_dealerValue.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -288f), new Vector2(300f, 32f));
+            _dealerValue = Label(column, "", 26f, Ink, TextAlignmentOptions.Center);
+            SetSize(_dealerValue.rectTransform, 300f, 30f);
         }
 
-        private static void BuildTableMarkings(RectTransform felt)
+        private static void BuildTableMarkings(RectTransform column)
         {
-            var arc = Label(felt, "BLACKJACK PAYS 3 TO 2      DEALER MUST STAND ON 17", 19f, Gold, TextAlignmentOptions.Center);
-            Anchor(arc.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -334f), new Vector2(1000f, 26f));
+            SetSize(
+                Label(column, "BLACKJACK PAYS 3 TO 2      DEALER MUST STAND ON 17", 19f, Gold, TextAlignmentOptions.Center).rectTransform,
+                1000f, 26f);
+        }
 
-            var spot = NewImage("Spot", felt, Gold);
+        /// <summary>
+        /// Where the player's hands sit, with the betting spot painted underneath. The
+        /// spot occupies the same block, so an empty table is not a void and a dealt
+        /// one does not shift everything below it.
+        /// </summary>
+        private static void BuildHands(RectTransform column)
+        {
+            var area = NewBox("HandArea", column, new Color(0f, 0f, 0f, 0f), 0, default, 0);
+            SetSize(area, 1300f, 232f);
+
+            var spot = NewImage("Spot", area, Gold);
             spot.sprite = Textures.Ring(Gold);
             spot.raycastTarget = false;
-            Anchor((RectTransform)spot.transform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -452f), new Vector2(156f, 156f));
+            var spotRect = (RectTransform)spot.transform;
+            spotRect.anchorMin = spotRect.anchorMax = new Vector2(0.5f, 0.5f);
+            spotRect.pivot = new Vector2(0.5f, 0.5f);
+            spotRect.sizeDelta = new Vector2(150f, 150f);
+            spotRect.anchoredPosition = Vector2.zero;
             _bettingSpot = spot.gameObject;
 
-            var place = Label((RectTransform)spot.transform, "PLACE\nYOUR BET", 15f, Gold, TextAlignmentOptions.Center);
+            var place = Label(spotRect, "PLACE\nYOUR BET", 15f, Gold, TextAlignmentOptions.Center);
             place.enableWordWrapping = true;
             Stretch(place.rectTransform);
-        }
 
-        private static void BuildHands(RectTransform felt)
-        {
-            _handsRow = NewRow("Hands", felt, 36f);
-            Anchor(_handsRow, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -466f), new Vector2(1300f, 250f));
+            _handsRow = NewRow("Hands", area, 36f);
+            Stretch(_handsRow);
         }
 
         /// <summary>
@@ -536,16 +576,13 @@ namespace Blackjack.Client
         /// Stacked rather than placed, because placing them by hand is exactly how the
         /// error message ended up behind the DEAL button.
         /// </summary>
-        private static void BuildBottom(RectTransform felt)
+        private static void BuildBottom(RectTransform parent)
         {
-            var stack = NewBox("Bottom", felt, new Color(0f, 0f, 0f, 0f), 0, default, 0);
-            stack.anchorMin = stack.anchorMax = new Vector2(0.5f, 0f);
-            stack.pivot = new Vector2(0.5f, 0f);
-            stack.anchoredPosition = new Vector2(0f, 22f);
-            stack.sizeDelta = new Vector2(1360f, 300f);
+            var stack = NewBox("Bottom", parent, new Color(0f, 0f, 0f, 0f), 0, default, 0);
+            SetSize(stack, 1360f, 262f);
 
             var column = stack.gameObject.AddComponent<VerticalLayoutGroup>();
-            column.childAlignment = TextAnchor.LowerCenter;
+            column.childAlignment = TextAnchor.UpperCenter;
             column.spacing = 10f;
             column.childForceExpandWidth = false;
             column.childForceExpandHeight = false;
@@ -560,7 +597,8 @@ namespace Blackjack.Client
             _actionRow = NewRow("Actions", stack, 14f);
             SetSize(_actionRow, 1340f, 50f);
 
-            SetSize((RectTransform)Chip(stack, "LEAVE TABLE", 220f, Close).transform, 220f, 44f);
+            _leave = Chip(stack, "LEAVE TABLE", 220f, Close);
+            SetSize((RectTransform)_leave.transform, 220f, 44f);
         }
 
         private static void BuildBetting(RectTransform parent)

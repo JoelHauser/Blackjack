@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 namespace Blackjack.Client
@@ -158,6 +158,129 @@ namespace Blackjack.Client
             Cache[key] = sprite;
             return sprite;
         }
+
+        /// <summary>
+        /// A card suit, drawn rather than typed.
+        ///
+        /// EFT's UI font has no card suits in it -- asked directly, HasCharacter says
+        /// no for all four -- so spelling them meant a giant letter C in the middle of
+        /// the club. These are the real shapes, from their implicit curves, which is
+        /// the difference between a card and a rectangle with a letter on it.
+        /// </summary>
+        internal static Sprite Suit(char suit, Color colour)
+        {
+            var key = $"suit:{suit}:{colour}";
+            if (Cache.TryGetValue(key, out var cached))
+            {
+                return cached;
+            }
+
+            const int size = 160;
+            var texture = NewTexture(size, size);
+            var pixels = new Color[size * size];
+
+            // Supersampled: four samples a pixel, because a heart's shoulders and a
+            // spade's point are all curve and alias badly at this size.
+            const int samples = 2;
+            var step = 1f / (samples + 1);
+
+            for (var py = 0; py < size; py++)
+            {
+                for (var px = 0; px < size; px++)
+                {
+                    var hits = 0;
+
+                    for (var sy = 1; sy <= samples; sy++)
+                    {
+                        for (var sx = 1; sx <= samples; sx++)
+                        {
+                            // Normalised to roughly -1..1 with a small margin.
+                            var x = (((px + (sx * step)) / size) - 0.5f) * 2.2f;
+                            var y = (((py + (sy * step)) / size) - 0.5f) * 2.2f;
+
+                            if (Inside(suit, x, y))
+                            {
+                                hits++;
+                            }
+                        }
+                    }
+
+                    var c = colour;
+                    c.a *= hits / (float)(samples * samples);
+                    pixels[(py * size) + px] = c;
+                }
+            }
+
+            texture.SetPixels(pixels);
+            texture.Apply();
+
+            var sprite = Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f);
+            Cache[key] = sprite;
+            return sprite;
+        }
+
+        /// <summary>
+        /// Whether a point falls inside a suit. Y is up, so the shapes are described the
+        /// way they are drawn rather than the way a texture is stored.
+        /// </summary>
+        private static bool Inside(char suit, float x, float y)
+        {
+            switch (char.ToUpperInvariant(suit))
+            {
+                case 'D':
+                    // A rhombus, taller than it is wide, as on a real card.
+                    return (Mathf.Abs(x) / 0.62f) + (Mathf.Abs(y) / 0.92f) <= 1f;
+
+                case 'H':
+                    return Heart(x, y);
+
+                case 'S':
+                    // A heart upside down, on a stem.
+                    return Heart(x * 1.02f, -y + 0.12f) || Stem(x, y);
+
+                case 'C':
+                    return Club(x, y) || Stem(x, y);
+
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>The classic implicit heart, scaled to sit in the box.</summary>
+        private static bool Heart(float x, float y)
+        {
+            const float scale = 1.18f;
+            var hx = x * scale;
+            var hy = (y * scale) - 0.28f;
+
+            var a = (hx * hx) + (hy * hy) - 0.62f;
+            return (a * a * a) - (hx * hx * hy * hy * hy) <= 0f;
+        }
+
+        /// <summary>Three lobes, for the club.</summary>
+        private static bool Club(float x, float y)
+        {
+            const float r = 0.42f;
+            return Circle(x, y - 0.44f, r)
+                   || Circle(x - 0.46f, y + 0.06f, r)
+                   || Circle(x + 0.46f, y + 0.06f, r);
+        }
+
+        /// <summary>The tapered foot shared by the spade and the club.</summary>
+        private static bool Stem(float x, float y)
+        {
+            if (y > 0.06f || y < -0.92f)
+            {
+                return false;
+            }
+
+            // Widens towards the base.
+            var halfWidth = Mathf.Lerp(0.06f, 0.40f, Mathf.InverseLerp(0.06f, -0.92f, y));
+            halfWidth *= halfWidth > 0.2f ? 1f : 1f;
+            return Mathf.Abs(x) <= halfWidth * (y < -0.62f ? 1.1f : 0.7f);
+        }
+
+        private static bool Circle(float x, float y, float r) => (x * x) + (y * y) <= r * r;
 
         /// <summary>
         /// Distance from the nearest corner's centre of curvature, or zero along the

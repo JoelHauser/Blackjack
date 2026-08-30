@@ -9,11 +9,11 @@ namespace Blackjack.Client
     ///
     /// The server sends cards as two characters, rank then suit: "TD" is the ten of
     /// diamonds, "AS" the ace of spades. There is no card art to load, so a card is
-    /// drawn: a rounded ivory face with a thin edge, the rank in opposite corners the
-    /// way a real card carries it, and a large suit through the middle.
+    /// drawn: a rounded ivory face, the rank in opposite corners the way a real card
+    /// carries it, and the suit through the middle.
     ///
-    /// The rank appearing twice, the second upside down, is most of what makes a
-    /// rectangle read as a playing card.
+    /// Suits are shapes, not letters. EFT's UI font has no card suits in it, so
+    /// spelling them put a giant C in the middle of every club.
     /// </summary>
     internal static class CardView
     {
@@ -34,7 +34,8 @@ namespace Blackjack.Client
         {
             var faceDown = string.IsNullOrEmpty(code) || code.Length < 2;
 
-            var go = new GameObject(faceDown ? "Card_back" : "Card_" + code,
+            var go = new GameObject(
+                faceDown ? "Card_back" : "Card_" + code,
                 typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
             go.transform.SetParent(parent, false);
 
@@ -45,83 +46,98 @@ namespace Blackjack.Client
             image.type = Image.Type.Sliced;
 
             // A drop shadow, so cards sit on the cloth rather than being printed on it.
-            Shadow(rect);
+            var shadow = go.AddComponent<Shadow>();
+            shadow.effectColor = new Color(0f, 0f, 0f, 0.45f);
+            shadow.effectDistance = new Vector2(3f, -4f);
 
             if (faceDown)
             {
                 image.sprite = Textures.RoundedBox(10, BackFace, BackEdge, 3);
 
-                var inner = new GameObject("Pattern", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-                inner.transform.SetParent(rect, false);
+                var inner = NewImage("Pattern", rect, Color.white);
+                inner.sprite = Textures.RoundedBox(8, BackPattern, BackPattern);
+                inner.type = Image.Type.Sliced;
+
                 var innerRect = (RectTransform)inner.transform;
                 innerRect.anchorMin = Vector2.zero;
                 innerRect.anchorMax = Vector2.one;
                 innerRect.offsetMin = new Vector2(10f, 10f);
                 innerRect.offsetMax = new Vector2(-10f, -10f);
-
-                var innerImage = inner.GetComponent<Image>();
-                innerImage.type = Image.Type.Sliced;
-                innerImage.sprite = Textures.RoundedBox(8, BackPattern, BackPattern);
                 return go;
             }
 
             image.sprite = Textures.RoundedBox(10, Face, Edge, 2);
 
             var rank = RankOf(code);
-            var suit = SuitOf(code, font);
-            var colour = IsRed(code) ? Red : Black;
+            var suit = char.ToUpperInvariant(code[code.Length - 1]);
+            var colour = IsRed(suit) ? Red : Black;
 
             Corner(rect, rank, suit, font, colour, false);
             Corner(rect, rank, suit, font, colour, true);
 
-            var pip = Text(rect, suit, font, 54f, colour, TextAlignmentOptions.Center);
-            pip.rectTransform.anchorMin = Vector2.zero;
-            pip.rectTransform.anchorMax = Vector2.one;
-            pip.rectTransform.offsetMin = new Vector2(22f, 18f);
-            pip.rectTransform.offsetMax = new Vector2(-22f, -18f);
+            // The pip through the middle.
+            var pip = NewImage("Pip", rect, Color.white);
+            pip.sprite = Textures.Suit(suit, colour);
+            pip.preserveAspect = true;
+            var pipRect = (RectTransform)pip.transform;
+            pipRect.anchorMin = pipRect.anchorMax = new Vector2(0.5f, 0.5f);
+            pipRect.pivot = new Vector2(0.5f, 0.5f);
+            pipRect.sizeDelta = new Vector2(52f, 52f);
+            pipRect.anchoredPosition = Vector2.zero;
 
             return go;
         }
 
         /// <summary>
-        /// Rank over suit in a corner. The second copy is rotated a half turn, which is
-        /// why this takes a flag rather than being written twice.
+        /// Rank over suit in a corner, the second copy rotated a half turn.
+        ///
+        /// The pivot is the middle of the corner block, not the corner of the card.
+        /// Rotating about a pivot sitting on the card's edge swings the whole block
+        /// outside it, which is what put a stray red D on the cloth below the dealer's
+        /// hand.
         /// </summary>
-        private static void Corner(RectTransform card, string rank, string suit, TMP_FontAsset font, Color colour, bool flipped)
+        private static void Corner(RectTransform card, string rank, char suit, TMP_FontAsset font, Color colour, bool flipped)
         {
             var holder = new GameObject(flipped ? "CornerFlipped" : "Corner", typeof(RectTransform));
             holder.transform.SetParent(card, false);
 
             var rect = (RectTransform)holder.transform;
-            rect.sizeDelta = new Vector2(30f, 46f);
+            rect.sizeDelta = new Vector2(28f, 46f);
             rect.anchorMin = rect.anchorMax = flipped ? new Vector2(1f, 0f) : new Vector2(0f, 1f);
-            rect.pivot = flipped ? new Vector2(1f, 0f) : new Vector2(0f, 1f);
-            rect.anchoredPosition = flipped ? new Vector2(-7f, 7f) : new Vector2(7f, -7f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = flipped ? new Vector2(-22f, 30f) : new Vector2(22f, -30f);
             rect.localRotation = Quaternion.Euler(0f, 0f, flipped ? 180f : 0f);
 
-            var rankLabel = Text(rect, rank, font, 24f, colour, TextAlignmentOptions.Center);
-            rankLabel.rectTransform.anchorMin = new Vector2(0f, 0.45f);
-            rankLabel.rectTransform.anchorMax = Vector2.one;
-            rankLabel.rectTransform.offsetMin = Vector2.zero;
-            rankLabel.rectTransform.offsetMax = Vector2.zero;
+            var label = Text(rect, rank, font, 23f, colour);
+            label.rectTransform.anchorMin = new Vector2(0f, 0.42f);
+            label.rectTransform.anchorMax = Vector2.one;
+            label.rectTransform.offsetMin = Vector2.zero;
+            label.rectTransform.offsetMax = Vector2.zero;
 
-            var suitLabel = Text(rect, suit, font, 18f, colour, TextAlignmentOptions.Center);
-            suitLabel.rectTransform.anchorMin = Vector2.zero;
-            suitLabel.rectTransform.anchorMax = new Vector2(1f, 0.45f);
-            suitLabel.rectTransform.offsetMin = Vector2.zero;
-            suitLabel.rectTransform.offsetMax = Vector2.zero;
+            var pip = NewImage("Pip", rect, Color.white);
+            pip.sprite = Textures.Suit(suit, colour);
+            pip.preserveAspect = true;
+            var pipRect = (RectTransform)pip.transform;
+            pipRect.anchorMin = new Vector2(0.5f, 0f);
+            pipRect.anchorMax = new Vector2(0.5f, 0.42f);
+            pipRect.pivot = new Vector2(0.5f, 0.5f);
+            pipRect.sizeDelta = new Vector2(16f, 16f);
+            pipRect.anchoredPosition = new Vector2(0f, 9f);
         }
 
-        private static void Shadow(RectTransform card)
+        private static Image NewImage(string name, Transform parent, Color colour)
         {
-            var shadow = card.gameObject.AddComponent<Shadow>();
-            shadow.effectColor = new Color(0f, 0f, 0f, 0.45f);
-            shadow.effectDistance = new Vector2(3f, -4f);
+            var go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            go.transform.SetParent(parent, false);
+            var image = go.GetComponent<Image>();
+            image.color = colour;
+            image.raycastTarget = false;
+            return image;
         }
 
-        private static TextMeshProUGUI Text(Transform parent, string value, TMP_FontAsset font, float size, Color colour, TextAlignmentOptions align)
+        private static TextMeshProUGUI Text(Transform parent, string value, TMP_FontAsset font, float size, Color colour)
         {
-            var go = new GameObject("Text", typeof(RectTransform));
+            var go = new GameObject("Rank", typeof(RectTransform));
             go.transform.SetParent(parent, false);
 
             var label = go.AddComponent<TextMeshProUGUI>();
@@ -133,7 +149,7 @@ namespace Blackjack.Client
             label.text = value;
             label.fontSize = size;
             label.color = colour;
-            label.alignment = align;
+            label.alignment = TextAlignmentOptions.Center;
             label.enableWordWrapping = false;
             label.raycastTarget = false;
             return label;
@@ -145,38 +161,6 @@ namespace Blackjack.Client
             return rank == 'T' ? "10" : rank.ToString();
         }
 
-        /// <summary>
-        /// A suit symbol where the font has one, a letter where it does not.
-        ///
-        /// EFT's UI font is not a full unicode face and there is no guarantee it
-        /// carries the card suits. A missing glyph renders as an empty box, which is
-        /// worse than the letter it replaced, so this asks first.
-        /// </summary>
-        private static string SuitOf(string code, TMP_FontAsset font)
-        {
-            var suit = char.ToUpperInvariant(code[code.Length - 1]);
-
-            var symbol = suit switch
-            {
-                'S' => '♠',
-                'H' => '♥',
-                'D' => '♦',
-                'C' => '♣',
-                _ => '?',
-            };
-
-            if (symbol != '?' && font != null && font.HasCharacter(symbol))
-            {
-                return symbol.ToString();
-            }
-
-            return suit.ToString();
-        }
-
-        private static bool IsRed(string code)
-        {
-            var suit = char.ToUpperInvariant(code[code.Length - 1]);
-            return suit == 'H' || suit == 'D';
-        }
+        private static bool IsRed(char suit) => suit == 'H' || suit == 'D';
     }
 }
