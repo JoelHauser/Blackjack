@@ -1,7 +1,9 @@
-﻿using System;
+using System;
+using System.Collections;
 using System.Linq;
 using EFT.UI;
 using HarmonyLib;
+using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
 
@@ -16,10 +18,8 @@ namespace Blackjack.Client
     /// profile out of the mod entirely. A menu button works on a profile five minutes
     /// old.
     ///
-    /// The button is cloned from one of the menu's own rather than built from nothing:
-    /// it inherits the game's font, sizing, hover feedback and click sounds, none of
-    /// which are worth reproducing by hand and all of which look wrong when they are
-    /// slightly off.
+    /// The button is a clone of one of the menu's own, and that is what makes it fit
+    /// alongside other menu mods rather than in spite of them. See <see cref="Install"/>.
     /// </summary>
     internal static class MenuButtonPatch
     {
@@ -28,73 +28,119 @@ namespace Blackjack.Client
         [HarmonyPatch(typeof(MenuScreen), nameof(MenuScreen.Awake))]
         [HarmonyPostfix]
         // ReSharper disable once InconsistentNaming
-        private static void AfterAwake(MenuScreen __instance) => Install(__instance, "Awake");
+        private static void AfterAwake(MenuScreen __instance) => Schedule(__instance);
 
-        /// <summary>
-        /// Also on Show, because other menu mods rearrange these buttons after Awake.
-        /// MoxoPixel's Menu Overhaul, for one, positions Play, Character, Trade,
-        /// Hideout and Exit individually from its own config -- a fixed list of five
-        /// that cannot know about a sixth. Re-applying later lets our button follow
-        /// whatever the template ended up looking like instead of sitting where the
-        /// menu used to be.
-        /// </summary>
         [HarmonyPatch(typeof(MenuScreen), nameof(MenuScreen.Show), typeof(MenuScreen.MainMenuBaseScreenController))]
         [HarmonyPostfix]
         // ReSharper disable once InconsistentNaming
-        private static void AfterShow(MenuScreen __instance) => Install(__instance, "Show");
+        private static void AfterShow(MenuScreen __instance) => Schedule(__instance);
 
-        private static void Install(MenuScreen screen, string source)
+        /// <summary>
+        /// Rebuilds at the end of the frame rather than immediately.
+        ///
+        /// This is the whole integration story with menu mods. MoxoPixel's Menu
+        /// Overhaul restyles the main menu from a hardcoded list of five buttons --
+        /// PlayButton, CharacterButton, TradeButton, HideoutButton, ExitButtonGroup --
+        /// hiding each one's background, activating its icon and nudging it sideways by
+        /// a per-button offset from its own config. A sixth button cannot be in that
+        /// list, and asking to be added to it is not something this mod can do.
+        ///
+        /// It does not have to be. Waiting until every other Awake and Show handler has
+        /// run means the button we copy has already been restyled, so the copy inherits
+        /// the styling exactly -- background hidden, icon state, label size, whatever
+        /// the other mod decided. Cloning early got a vanilla-looking button sitting
+        /// next to five restyled ones, which is what looked wrong.
+        ///
+        /// It also means this needs no knowledge of that mod at all: anything that
+        /// restyles the hideout button, now or later, is inherited for free.
+        /// </summary>
+        private static void Schedule(MenuScreen screen)
         {
+            if (screen == null || BlackjackClientPlugin.Instance == null)
+            {
+                return;
+            }
+
+            BlackjackClientPlugin.Instance.StartCoroutine(InstallAtEndOfFrame(screen));
+        }
+
+        private static IEnumerator InstallAtEndOfFrame(MenuScreen screen)
+        {
+            yield return new WaitForEndOfFrame();
+
             try
             {
-                if (screen == null)
-                {
-                    return;
-                }
-
-                var template = FindTemplate(screen);
-                if (template == null)
-                {
-                    BlackjackClientPlugin.Log.LogWarning(
-                        "[Blackjack] no menu button to clone from; the menu's layout has changed.");
-                    return;
-                }
-
-                var existing = FindOurs(screen);
-                if (existing != null)
-                {
-                    // Already there. Re-follow the template, which another mod may have
-                    // moved since we were created.
-                    Follow(existing, template);
-                    return;
-                }
-
-                var clone = UnityEngine.Object.Instantiate(template.gameObject, template.transform.parent, false);
-                clone.name = ButtonName;
-                clone.transform.SetSiblingIndex(template.transform.GetSiblingIndex() + 1);
-
-                var button = clone.GetComponent<DefaultUIButton>();
-                if (button == null)
-                {
-                    BlackjackClientPlugin.Log.LogWarning("[Blackjack] the clone has no DefaultUIButton.");
-                    UnityEngine.Object.Destroy(clone);
-                    return;
-                }
-
-                button.SetHeaderText("BLACKJACK");
-                button.Interactable = true;
-                ClearIcon(button);
-                Wire(button);
-                Follow(button, template);
-
-                BlackjackClientPlugin.Log.LogInfo(
-                    $"[Blackjack] menu button added from {source}, cloned from '{template.name}'");
+                Install(screen);
             }
             catch (Exception ex)
             {
                 // A missing button is a disappointment. A menu that fails to build is a
                 // game that does not start, so this never rethrows.
                 BlackjackClientPlugin.Log.LogError("[Blackjack] could not add the menu button: " + ex);
+            }
+        }
+
+        private static void Install(MenuScreen screen)
+        {
+            if (screen == null)
+            {
+                return;
+            }
+
+            var template = FindTemplate(screen);
+            if (template == null)
+            {
+                BlackjackClientPlugin.Log.LogWarning(
+                    "[Blackjack] no menu button to clone from; the menu's layout has changed.");
+                return;
+            }
+
+            // Thrown away and cloned again rather than adjusted in place. Whatever
+            // another mod did to the template between then and now is inherited by
+            // copying it afresh, and there is no state of ours to get out of step.
+            var existing = FindOurs(screen);
+            if (existing != null)
+            {
+                UnityEngine.Object.DestroyImmediate(existing.gameObject);
+            }
+
+            var clone = UnityEngine.Object.Instantiate(template.gameObject, template.transform.parent, false);
+            clone.name = ButtonName;
+            clone.transform.SetSiblingIndex(template.transform.GetSiblingIndex() + 1);
+
+            var button = clone.GetComponent<DefaultUIButton>();
+            if (button == null)
+            {
+                BlackjackClientPlugin.Log.LogWarning("[Blackjack] the clone has no DefaultUIButton.");
+                UnityEngine.Object.Destroy(clone);
+                return;
+            }
+
+            Relabel(button, "BLACKJACK");
+            button.Interactable = true;
+            Wire(button);
+            Follow(button, template);
+
+            BlackjackClientPlugin.Log.LogInfo($"[Blackjack] menu button added, cloned from '{template.name}'");
+        }
+
+        /// <summary>
+        /// Renames the button without undoing anyone's styling.
+        ///
+        /// SetHeaderText re-applies the button's own font size, which throws away a
+        /// size another mod set on the label. Putting it back afterwards keeps our
+        /// button the same size as its neighbours.
+        /// </summary>
+        private static void Relabel(DefaultUIButton button, string text)
+        {
+            var label = button.GetComponentInChildren<TextMeshProUGUI>(true);
+            var size = label != null ? label.fontSize : 0f;
+
+            button.SetHeaderText(text);
+
+            if (label != null && size > 0f)
+            {
+                label.fontSize = size;
             }
         }
 
@@ -125,25 +171,9 @@ namespace Blackjack.Client
         }
 
         /// <summary>
-        /// Drops the borrowed icon. Without this the button wears whichever icon the
-        /// template had, so BLACKJACK shows the hideout's.
-        /// </summary>
-        private static void ClearIcon(DefaultUIButton button)
-        {
-            try
-            {
-                button.SetIcon(null, null);
-            }
-            catch (Exception ex)
-            {
-                BlackjackClientPlugin.Log.LogWarning("[Blackjack] could not clear the button icon: " + ex.Message);
-            }
-        }
-
-        /// <summary>
-        /// Sits our button under the template, matching whatever position and size the
-        /// template currently has. Called again on every Show so a menu mod that moves
-        /// the originals takes ours with it.
+        /// Sits our button one row under the template, matching whatever position and
+        /// size it currently has -- including any sideways offset a menu mod applied,
+        /// since that is baked into the template by the time this runs.
         /// </summary>
         private static void Follow(DefaultUIButton ours, DefaultUIButton template)
         {
@@ -160,11 +190,9 @@ namespace Blackjack.Client
             mine.sizeDelta = theirs.sizeDelta;
             mine.localScale = theirs.localScale;
 
-            // One row below the template, using the gap between two real buttons rather
-            // than a number picked by eye, so it still lines up if a mod restyles them.
-            var step = RowHeight(template);
-            mine.anchoredPosition = theirs.anchoredPosition + new Vector2(0f, -step);
-
+            // One row below, using the gap between two real buttons rather than a
+            // number picked by eye, so it still lines up if a mod restyles them.
+            mine.anchoredPosition = theirs.anchoredPosition + new Vector2(0f, -RowHeight(template));
             ours.transform.SetSiblingIndex(template.transform.GetSiblingIndex() + 1);
         }
 
@@ -178,26 +206,24 @@ namespace Blackjack.Client
             var rect = template.GetComponent<RectTransform>();
             var fallback = rect != null ? Mathf.Abs(rect.sizeDelta.y) : 40f;
 
-            if (parent == null)
+            if (parent != null)
             {
-                return fallback > 1f ? fallback : 40f;
-            }
+                var rows = parent.GetComponentsInChildren<DefaultUIButton>(true)
+                    .Where(b => b != null && b.name != ButtonName)
+                    .Select(b => b.GetComponent<RectTransform>())
+                    .Where(r => r != null)
+                    .Select(r => r.anchoredPosition.y)
+                    .Distinct()
+                    .OrderByDescending(y => y)
+                    .ToList();
 
-            var rows = parent.GetComponentsInChildren<DefaultUIButton>(true)
-                .Where(b => b != null && b.name != ButtonName)
-                .Select(b => b.GetComponent<RectTransform>())
-                .Where(r => r != null)
-                .Select(r => r.anchoredPosition.y)
-                .Distinct()
-                .OrderByDescending(y => y)
-                .ToList();
-
-            for (var i = 1; i < rows.Count; i++)
-            {
-                var gap = Mathf.Abs(rows[i - 1] - rows[i]);
-                if (gap > 1f)
+                for (var i = 1; i < rows.Count; i++)
                 {
-                    return gap;
+                    var gap = Mathf.Abs(rows[i - 1] - rows[i]);
+                    if (gap > 1f)
+                    {
+                        return gap;
+                    }
                 }
             }
 
@@ -209,9 +235,9 @@ namespace Blackjack.Client
                 .FirstOrDefault(b => b != null && b.name == ButtonName);
 
         /// <summary>
-        /// A button to copy. Preferring the hideout button because it is always present
-        /// and never contextual -- the play button changes with matchmaking state and
-        /// the disconnect button is not always shown.
+        /// A button to copy. The hideout button, because it is always present and never
+        /// contextual -- the play button changes with matchmaking state and the exit
+        /// button is a group rather than a plain button in at least one menu mod.
         /// </summary>
         private static DefaultUIButton FindTemplate(MenuScreen screen)
         {

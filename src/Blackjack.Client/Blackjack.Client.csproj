@@ -87,6 +87,10 @@
       <HintPath>$(GameManaged)\Sirenix.Serialization.Config.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>$(GameManaged)\UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Newtonsoft.Json">
       <HintPath>$(GameManaged)\Newtonsoft.Json.dll</HintPath>
       <Private>false</Private>
@@ -105,9 +109,14 @@
     Copies the built plugin into the install. Off by default so an ordinary build
     cannot touch a running game.
   -->
+  <ItemGroup>
+    <TableArt Include="assets	able.png" />
+  </ItemGroup>
+
   <Target Name="DeployToSPT" AfterTargets="Build" Condition="'$(DeployToSPT)' == 'true'">
     <MakeDir Directories="$(SPTPath)\BepInEx\plugins\Blackjack" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(SPTPath)\BepInEx\plugins\Blackjack" />
+    <Copy SourceFiles="@(TableArt)" DestinationFolder="$(SPTPath)\BepInEx\plugins\Blackjack" />
     <Message Importance="high" Text="Deployed $(TargetFileName) to $(SPTPath)\BepInEx\plugins\Blackjack" />
   </Target>
 

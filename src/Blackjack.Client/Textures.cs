@@ -160,6 +160,60 @@ namespace Blackjack.Client
         }
 
         /// <summary>
+        /// A sprite loaded from a PNG sitting beside the plugin.
+        ///
+        /// Shipped as a loose file rather than embedded in the assembly or wrapped in
+        /// an AssetBundle: it can be looked at, replaced with your own, or deleted
+        /// without touching the mod. A missing or unreadable file is not an error --
+        /// the caller falls back to the drawn table.
+        /// </summary>
+        internal static Sprite FromFile(string path)
+        {
+            var key = "file:" + path;
+            if (Cache.TryGetValue(key, out var cached))
+            {
+                return cached;
+            }
+
+            if (!System.IO.File.Exists(path))
+            {
+                return null;
+            }
+
+            try
+            {
+                var bytes = System.IO.File.ReadAllBytes(path);
+
+                // Size and format are replaced by LoadImage; these are placeholders.
+                var texture = new Texture2D(2, 2, TextureFormat.RGBA32, true)
+                {
+                    wrapMode = TextureWrapMode.Clamp,
+                    filterMode = FilterMode.Bilinear,
+                    hideFlags = HideFlags.HideAndDontSave,
+                };
+
+                if (!texture.LoadImage(bytes))
+                {
+                    Object.Destroy(texture);
+                    return null;
+                }
+
+                var sprite = Sprite.Create(
+                    texture,
+                    new Rect(0f, 0f, texture.width, texture.height),
+                    new Vector2(0.5f, 0.5f),
+                    100f);
+
+                Cache[key] = sprite;
+                return sprite;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
         /// A card suit, drawn rather than typed.
         ///
         /// EFT's UI font has no card suits in it -- asked directly, HasCharacter says

@@ -63,6 +63,17 @@ namespace Blackjack.Client
         /// </summary>
         private static readonly Dictionary<string, long> Balances = new Dictionary<string, long>();
 
+        /// <summary>
+        /// Left, top, right, bottom padding between the table's edge and the cloth it
+        /// is safe to put things on. The photograph has a wooden rail around it; the
+        /// drawn table barely needs any.
+        /// </summary>
+        private static Vector4 _feltInset = new Vector4(30f, 22f, 30f, 84f);
+
+        private static string TableImagePath => System.IO.Path.Combine(
+            System.IO.Path.GetDirectoryName(BlackjackClientPlugin.Instance?.Info?.Location ?? ".") ?? ".",
+            "table.png");
+
         private static string _wallet = "Roubles";
         private static long _wager = 10_000;
 
@@ -477,23 +488,47 @@ namespace Blackjack.Client
             var backdrop = NewBox("Backdrop", canvasObject.transform, new Color(0f, 0f, 0f, 0.86f), 0, default, 0);
             Stretch(backdrop);
 
-            var rim = NewBox("Rim", canvasObject.transform, FeltEdge, 26, Rail, 6);
-            rim.anchorMin = rim.anchorMax = new Vector2(0.5f, 0.5f);
-            rim.pivot = new Vector2(0.5f, 0.5f);
-            rim.sizeDelta = new Vector2(1460f, 900f);
+            // A photograph of a real table if one is installed beside the plugin,
+            // otherwise the drawn one. The photograph is a loose PNG so it can be
+            // swapped for another without rebuilding anything.
+            var photo = Textures.FromFile(TableImagePath);
+            RectTransform felt;
 
-            var felt = NewBox("Felt", rim, Felt, 20, default, 0);
-            felt.anchorMin = Vector2.zero;
-            felt.anchorMax = Vector2.one;
-            felt.offsetMin = new Vector2(18f, 18f);
-            felt.offsetMax = new Vector2(-18f, -18f);
+            if (photo != null)
+            {
+                var table = NewImage("Table", canvasObject.transform, Color.white);
+                table.sprite = photo;
+                table.preserveAspect = true;
+                var tableRect = (RectTransform)table.transform;
+                tableRect.anchorMin = tableRect.anchorMax = new Vector2(0.5f, 0.5f);
+                tableRect.pivot = new Vector2(0.5f, 0.5f);
+                tableRect.sizeDelta = new Vector2(1470f, 980f);
 
-            // Lit from the middle rather than flat. The cheapest thing that stops a
-            // green rectangle reading as a green rectangle.
-            var vignette = NewImage("Vignette", felt, Color.white);
-            vignette.sprite = Textures.Vignette(new Color(0f, 0f, 0f, 0.55f));
-            vignette.raycastTarget = false;
-            Stretch((RectTransform)vignette.transform);
+                felt = tableRect;
+                _feltInset = new Vector4(112f, 96f, 112f, 104f);
+            }
+            else
+            {
+                var rim = NewBox("Rim", canvasObject.transform, FeltEdge, 26, Rail, 6);
+                rim.anchorMin = rim.anchorMax = new Vector2(0.5f, 0.5f);
+                rim.pivot = new Vector2(0.5f, 0.5f);
+                rim.sizeDelta = new Vector2(1460f, 900f);
+
+                felt = NewBox("Felt", rim, Felt, 20, default, 0);
+                felt.anchorMin = Vector2.zero;
+                felt.anchorMax = Vector2.one;
+                felt.offsetMin = new Vector2(18f, 18f);
+                felt.offsetMax = new Vector2(-18f, -18f);
+
+                // Lit from the middle rather than flat. The cheapest thing that stops a
+                // green rectangle reading as a green rectangle.
+                var vignette = NewImage("Vignette", felt, Color.white);
+                vignette.sprite = Textures.Vignette(new Color(0f, 0f, 0f, 0.55f));
+                vignette.raycastTarget = false;
+                Stretch((RectTransform)vignette.transform);
+
+                _feltInset = new Vector4(30f, 22f, 30f, 84f);
+            }
 
             BuildHeader(felt);
 
@@ -504,8 +539,8 @@ namespace Blackjack.Client
             // and nothing said where the space came from. A layout group settles it.
             var column = NewBox("Column", felt, new Color(0f, 0f, 0f, 0f), 0, default, 0);
             Stretch(column);
-            column.offsetMin = new Vector2(30f, 22f);
-            column.offsetMax = new Vector2(-30f, -84f);
+            column.offsetMin = new Vector2(_feltInset.x, _feltInset.y);
+            column.offsetMax = new Vector2(-_feltInset.z, -_feltInset.w);
 
             var flow = column.gameObject.AddComponent<VerticalLayoutGroup>();
             flow.childAlignment = TextAnchor.UpperCenter;
@@ -528,11 +563,15 @@ namespace Blackjack.Client
 
         private static void BuildHeader(RectTransform felt)
         {
+            // Inside the cloth rather than on the rail, since the rail is now a
+            // photograph of wood and text sitting on it looks stuck there.
+            var inset = _feltInset.y + 26f;
+
             var title = Label(felt, "BLACKJACK", 30f, Ink, TextAlignmentOptions.Left);
-            Anchor(title.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(220f, -46f), new Vector2(400f, 40f));
+            Anchor(title.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(_feltInset.x + 210f, -inset), new Vector2(400f, 40f));
 
             _balance = Label(felt, "", 24f, Ink, TextAlignmentOptions.Right);
-            Anchor(_balance.rectTransform, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-250f, -46f), new Vector2(460f, 40f));
+            Anchor(_balance.rectTransform, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-(_feltInset.z + 240f), -inset), new Vector2(460f, 40f));
         }
 
         private static void BuildDealer(RectTransform column)

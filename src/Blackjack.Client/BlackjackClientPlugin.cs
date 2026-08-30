@@ -1,4 +1,4 @@
-using BepInEx;
+﻿using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
 
@@ -21,8 +21,16 @@ namespace Blackjack.Client
 
         internal static ManualLogSource Log;
 
+        /// <summary>
+        /// The plugin itself, so code that is not a MonoBehaviour can still start a
+        /// coroutine. The menu button needs one to wait a frame for other menu mods to
+        /// finish before it copies what they left behind.
+        /// </summary>
+        internal static BlackjackClientPlugin Instance;
+
         private void Awake()
         {
+            Instance = this;
             Log = Logger;
 
             new Harmony(PluginGuid).PatchAll(typeof(MenuButtonPatch));
