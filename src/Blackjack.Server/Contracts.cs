@@ -1,4 +1,4 @@
-using Blackjack.Game;
+﻿using Blackjack.Game;
 using SPTarkov.Server.Core.Models.Eft.Common.Request;
 using SPTarkov.Server.Core.Models.Utils;
 
@@ -9,6 +9,18 @@ public record DealRequest : IRequestData
     public string Wallet { get; set; } = nameof(Server.Wallet.Roubles);
 
     public int Wager { get; set; }
+
+    /// <summary>
+    /// Set when the player has turned the table maximum off.
+    ///
+    /// Taken at the client's word deliberately. This is single player: the person
+    /// sending it owns the server it is sent to, and the setting lives in the
+    /// BepInEx menu because that is where they will look for it rather than in a
+    /// JSON file that needs a restart. Nothing is being defended against here.
+    ///
+    /// The minimum is not waivable. A bet of nothing is not a bet.
+    /// </summary>
+    public bool IgnoreMaximum { get; set; }
 }
 
 public record ActionRequest : IRequestData

@@ -1,4 +1,5 @@
 ﻿using BepInEx;
+using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
 using UnityEngine;
@@ -29,10 +30,32 @@ namespace Blackjack.Client
         /// </summary>
         internal static BlackjackClientPlugin Instance;
 
+        /// <summary>
+        /// Whether the table's maximum bet applies.
+        ///
+        /// On by default, and it is the house's only real protection. A 0.45% edge
+        /// over six decks is nothing across a session; what stops a player compounding
+        /// is being unable to cover a losing streak by doubling up, which a maximum of
+        /// five hundred times the minimum caps at nine doubles.
+        ///
+        /// Turning it off is a supported answer -- it is a single-player game and the
+        /// stash is the player's own -- so it lives in the F12 menu rather than in a
+        /// config file that needs the server restarted.
+        /// </summary>
+        internal static ConfigEntry<bool> EnforceTableMaximum;
+
         private void Awake()
         {
             Instance = this;
             Log = Logger;
+
+            EnforceTableMaximum = Config.Bind(
+                "Table",
+                "Enforce maximum bet",
+                true,
+                "The table's per-currency maximum: 500,000 roubles a hand, 5,000 dollars or euros, "
+                + "50 GP, 10 bitcoin, 5 Lega. Turn this off to bet as much as you are carrying. "
+                + "The minimum always applies.");
 
             new Harmony(PluginGuid).PatchAll(typeof(MenuButtonPatch));
 

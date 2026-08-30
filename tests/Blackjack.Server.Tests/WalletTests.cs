@@ -31,7 +31,10 @@ public class WalletTests
             Assert.False(info.Tpl.IsEmpty, $"{wallet} has no template id.");
             Assert.True(info.MinBet > 0, $"{wallet} allows a zero bet.");
             Assert.True(info.MaxBet >= info.MinBet, $"{wallet} limits are inverted.");
-            Assert.Equal(int.MaxValue, info.MaxBet);
+
+            // A ceiling that is not a real number is not a ceiling, and the table
+            // maximum only does its job while it is finite.
+            Assert.NotEqual(int.MaxValue, info.MaxBet);
             Assert.False(string.IsNullOrWhiteSpace(info.Symbol));
         }
     }
@@ -61,10 +64,12 @@ public class WalletTests
     }
 
     /// <summary>
-    /// There is no house limit. A casino caps a bet to protect itself and there is no
-    /// house here to protect: the player is staking their own stash against a shoe.
-    /// What they can afford is the only ceiling, and that is a balance check, not a
-    /// rule.
+    /// The table maximum is what actually protects the house.
+    ///
+    /// A 0.45% edge over six decks is nothing across a session. What stops a player
+    /// compounding is being unable to cover a losing streak by doubling up, and a
+    /// ceiling of five hundred times the minimum caps that at nine doubles. Being
+    /// able to afford the bet is not enough.
     /// </summary>
     [Theory]
     [InlineData(Wallet.Bitcoin, 11)]
@@ -72,7 +77,7 @@ public class WalletTests
     [InlineData(Wallet.GpCoins, 51)]
     [InlineData(Wallet.Dollars, 5001)]
     [InlineData(Wallet.Roubles, 5_000_000)]
-    public async Task AnyStakeThePlayerCanAffordIsAccepted(Wallet wallet, int wager)
+    public async Task StakesAboveTheTableMaximumAreRefused(Wallet wallet, int wager)
     {
         var service = WithDeal("KS KH 9D 7C");
         _bank.SetBalance(wallet, 10_000_000);
@@ -81,8 +86,47 @@ public class WalletTests
             new DealRequest { Wager = wager, Wallet = wallet.ToString() },
             _session);
 
+        Assert.False(response.Ok);
+        Assert.Contains("takes up to", response.Error);
+        Assert.Empty(_bank.Debits);
+    }
+
+    /// <summary>
+    /// And it can be waived, because this is single player and the stash is the
+    /// player's own. The request says so and the server takes it at its word.
+    /// </summary>
+    [Theory]
+    [InlineData(Wallet.Bitcoin, 11)]
+    [InlineData(Wallet.Roubles, 5_000_000)]
+    public async Task TheMaximumCanBeWaived(Wallet wallet, int wager)
+    {
+        var service = WithDeal("KS KH 9D 7C");
+        _bank.SetBalance(wallet, 10_000_000);
+
+        var response = await service.DealAsync(
+            new DealRequest { Wager = wager, Wallet = wallet.ToString(), IgnoreMaximum = true },
+            _session);
+
         Assert.True(response.Ok, response.Error);
         Assert.Equal([(wallet, wager)], _bank.Debits);
+    }
+
+    /// <summary>
+    /// Waiving the ceiling does not waive the floor. A bet of nothing is still not a
+    /// bet, however the request is phrased.
+    /// </summary>
+    [Fact]
+    public async Task WaivingTheMaximumStillRespectsTheMinimum()
+    {
+        var service = WithDeal("KS KH 9D 7C");
+        _bank.SetBalance(Wallet.Roubles, 10_000_000);
+
+        var response = await service.DealAsync(
+            new DealRequest { Wager = 1, Wallet = nameof(Wallet.Roubles), IgnoreMaximum = true },
+            _session);
+
+        Assert.False(response.Ok);
+        Assert.Empty(_bank.Debits);
     }
 
     /// <summary>

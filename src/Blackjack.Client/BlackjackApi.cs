@@ -36,8 +36,18 @@ namespace Blackjack.Client
         /// case-sensitively, so lowercase keys bind nothing and every field silently
         /// takes its default -- a wager of 0, refused for being out of range.
         /// </summary>
-        internal static JObject Deal(string wallet, long wager) =>
-            Post("/blackjack/deal", "{\"Wallet\":\"" + wallet + "\",\"Wager\":" + wager + "}");
+        internal static JObject Deal(string wallet, long wager)
+        {
+            // The server enforces the table maximum unless told the player has turned
+            // it off. Sent every time rather than only when true, so the request says
+            // plainly what was asked for.
+            var ignore = BlackjackClientPlugin.EnforceTableMaximum?.Value == false;
+
+            return Post(
+                "/blackjack/deal",
+                "{\"Wallet\":\"" + wallet + "\",\"Wager\":" + wager
+                + ",\"IgnoreMaximum\":" + (ignore ? "true" : "false") + "}");
+        }
 
         internal static JObject Act(string action) =>
             Post("/blackjack/action", "{\"Action\":\"" + action + "\"}");

@@ -62,6 +62,12 @@ public class BlackjackService(
         // Validate the stake before taking it. Letting Deal throw after the debit
         // would pocket the money and leave no hand to win it back with.
         var limits = WalletInfo.For(wallet);
+        if (!request.IgnoreMaximum && request.Wager > limits.MaxBet)
+        {
+            return BlackjackResponse.Failed(
+                $"The table takes up to {limits.MaxBet:N0} {limits.Label} a hand.");
+        }
+
         if (request.Wager < limits.MinBet)
         {
             return BlackjackResponse.Failed(
