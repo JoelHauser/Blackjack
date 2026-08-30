@@ -82,7 +82,7 @@ namespace Blackjack.Client
             var pipRect = (RectTransform)pip.transform;
             pipRect.anchorMin = pipRect.anchorMax = new Vector2(0.5f, 0.5f);
             pipRect.pivot = new Vector2(0.5f, 0.5f);
-            pipRect.sizeDelta = new Vector2(52f, 52f);
+            pipRect.sizeDelta = new Vector2(46f, 46f);
             pipRect.anchoredPosition = Vector2.zero;
 
             return go;
@@ -101,19 +101,22 @@ namespace Blackjack.Client
             var holder = new GameObject(flipped ? "CornerFlipped" : "Corner", typeof(RectTransform));
             holder.transform.SetParent(card, false);
 
+            // Geometry worth spelling out, because guessing at it collided twice.
+            // The card is 96 by 138 with its origin in the middle, so the top edge is
+            // at +69. This block is 38 tall centred 25 below that edge, which puts its
+            // lower edge at +25 -- clear of the centre pip, which is 46 across and so
+            // reaches only +23. The index and the pip cannot touch at any rank.
             var rect = (RectTransform)holder.transform;
-            rect.sizeDelta = new Vector2(30f, 56f);
+            rect.sizeDelta = new Vector2(24f, 38f);
             rect.anchorMin = rect.anchorMax = flipped ? new Vector2(1f, 0f) : new Vector2(0f, 1f);
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = flipped ? new Vector2(-21f, 33f) : new Vector2(21f, -33f);
+            rect.anchoredPosition = flipped ? new Vector2(-18f, 25f) : new Vector2(18f, -25f);
             rect.localRotation = Quaternion.Euler(0f, 0f, flipped ? 180f : 0f);
 
-            // Rank in the upper half, pip pinned to the bottom, with a clear gap
-            // between. Sharing one block with no gap had the two touching, which on a
-            // real card they never do.
-            var label = Text(rect, rank, font, 23f, colour);
+            // Rank above, pip below, with a gap. On a real card these never touch.
+            var label = Text(rect, rank, font, 21f, colour);
             var labelRect = label.rectTransform;
-            labelRect.anchorMin = new Vector2(0f, 0.46f);
+            labelRect.anchorMin = new Vector2(0f, 0.44f);
             labelRect.anchorMax = Vector2.one;
             labelRect.offsetMin = Vector2.zero;
             labelRect.offsetMax = Vector2.zero;
@@ -124,8 +127,8 @@ namespace Blackjack.Client
             var pipRect = (RectTransform)pip.transform;
             pipRect.anchorMin = pipRect.anchorMax = new Vector2(0.5f, 0f);
             pipRect.pivot = new Vector2(0.5f, 0f);
-            pipRect.sizeDelta = new Vector2(15f, 15f);
-            pipRect.anchoredPosition = new Vector2(0f, 1f);
+            pipRect.sizeDelta = new Vector2(13f, 13f);
+            pipRect.anchoredPosition = new Vector2(0f, 0f);
         }
 
         private static Image NewImage(string name, Transform parent, Color colour)
