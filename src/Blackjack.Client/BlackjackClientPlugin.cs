@@ -1,6 +1,7 @@
 ﻿using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
+using UnityEngine;
 
 namespace Blackjack.Client
 {
@@ -36,6 +37,22 @@ namespace Blackjack.Client
             new Harmony(PluginGuid).PatchAll(typeof(MenuButtonPatch));
 
             Log.LogInfo("[Blackjack] client loaded");
+        }
+
+        /// <summary>
+        /// Escape closes the table.
+        ///
+        /// Watched here rather than patched into EFT's own input handling: the table
+        /// is our window, not one of the game's screens, so nothing in the game knows
+        /// to close it. The key is only acted on while the table is open, so this
+        /// cannot interfere with escape anywhere else.
+        /// </summary>
+        private void Update()
+        {
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                BlackjackPanel.OnEscape();
+            }
         }
     }
 }

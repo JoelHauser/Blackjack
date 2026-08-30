@@ -25,6 +25,13 @@ namespace Blackjack.Client
         internal static JObject State() => Post("/blackjack/state", "{}");
 
         /// <summary>
+        /// The lifetime record. Unlike the others this comes back as the stats object
+        /// itself rather than wrapped in a response, because nothing about it can fail
+        /// in a way the player needs telling about.
+        /// </summary>
+        internal static JObject Stats() => Post("/blackjack/stats", "{}");
+
+        /// <summary>
         /// PascalCase property names, deliberately. SPT matches request bodies
         /// case-sensitively, so lowercase keys bind nothing and every field silently
         /// takes its default -- a wager of 0, refused for being out of range.

@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using Newtonsoft.Json.Linq;
 using TMPro;
 using UnityEngine;
@@ -54,6 +55,9 @@ namespace Blackjack.Client
         private static CanvasGroup _fade;
         private static Coroutine _fading;
         private static GameObject _leave;
+        private static RectTransform _cloth;
+        private static GameObject _statsPanel;
+        private static TextMeshProUGUI _statsText;
         private static GameObject _confirm;
         private static TextMeshProUGUI _confirmText;
 
@@ -134,12 +138,50 @@ namespace Blackjack.Client
             }
         }
 
+        /// <summary>
+        /// Escape, handled in the order things are stacked: the question first, then
+        /// the record sheet, then the table itself. Anything else and escape would
+        /// close the whole table out from under an unanswered prompt.
+        /// </summary>
+        internal static void OnEscape()
+        {
+            if (_root == null || !_root.activeSelf)
+            {
+                return;
+            }
+
+            if (_confirm != null && _confirm.activeSelf)
+            {
+                CancelConfirm();
+                return;
+            }
+
+            if (_statsPanel != null && _statsPanel.activeSelf)
+            {
+                ToggleStats();
+                return;
+            }
+
+            Close();
+        }
+
         internal static void Close()
         {
             // An unanswered question must not be waiting when the table is reopened.
             if (_confirm != null)
             {
                 _confirm.SetActive(false);
+            }
+
+            // The sheet must not still be lying on the table next time it is opened.
+            if (_statsPanel != null && _statsPanel.activeSelf)
+            {
+                _statsPanel.SetActive(false);
+
+                if (_cloth != null)
+                {
+                    _cloth.gameObject.SetActive(true);
+                }
             }
 
             if (_root == null || !_root.activeSelf)
@@ -696,6 +738,8 @@ namespace Blackjack.Client
             flow.childControlWidth = false;
             flow.childControlHeight = false;
 
+            _cloth = column;
+
             BuildDealer(column);
 
             // Air between the dealer's total and the player's cards. Without it the
@@ -706,6 +750,8 @@ namespace Blackjack.Client
             BuildHands(column);
 
             // Under the table, on the dark, where there is room for a full-width bar.
+            BuildStats(felt);
+
             BuildBottom(root);
             BuildConfirm(canvasObject.transform);
 
@@ -722,6 +768,114 @@ namespace Blackjack.Client
         /// oval is its narrowest part. On the dark above the table they are simply
         /// legible.
         /// </summary>
+        /// <summary>
+        /// The lifetime record, laid over the cloth.
+        ///
+        /// On the table rather than in a window of its own, and the cards come off
+        /// while it is up. A table with a sheet of numbers lying on it is a table
+        /// between hands; a panel floating over a dealt hand would just be in the way
+        /// of it.
+        /// </summary>
+        private static void BuildStats(RectTransform felt)
+        {
+            var sheet = NewBox("Stats", felt, new Color(0f, 0f, 0f, 0f), 0, default, 0);
+            Stretch(sheet);
+            _statsPanel = sheet.gameObject;
+
+            var title = Label(sheet, "RECORD", 22f, Gold, TextAlignmentOptions.Center);
+            Anchor(title.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -120f), new Vector2(400f, 28f));
+
+            _statsText = Label(sheet, "", 20f, Ink, TextAlignmentOptions.Top);
+            _statsText.enableWordWrapping = false;
+            Anchor(_statsText.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, -14f), new Vector2(900f, 320f));
+
+            _statsPanel.SetActive(false);
+        }
+
+        /// <summary>
+        /// Shows the record and clears the table, or puts the hand back.
+        ///
+        /// The round is untouched either way -- it lives on the server, and this only
+        /// decides what is drawn. Coming back asks for the state again rather than
+        /// trusting what was on screen before.
+        /// </summary>
+        private static void ToggleStats()
+        {
+            if (_statsPanel == null || _cloth == null)
+            {
+                return;
+            }
+
+            var showing = !_statsPanel.activeSelf;
+
+            _statsPanel.SetActive(showing);
+            _cloth.gameObject.SetActive(!showing);
+
+            if (showing)
+            {
+                _statsText.text = FormatStats(BlackjackApi.Stats());
+            }
+            else
+            {
+                Render(BlackjackApi.State(), true);
+            }
+        }
+
+        private static string FormatStats(JObject stats)
+        {
+            if (stats == null)
+            {
+                return "<color=#eb6b5c>No answer from the server.</color>";
+            }
+
+            int Get(string name) => stats[name]?.ToObject<int>() ?? 0;
+
+            var rounds = Get("RoundsPlayed");
+            if (rounds == 0)
+            {
+                return "<color=#a9b8a4>No hands played yet.</color>";
+            }
+
+            var hands = Get("HandsPlayed");
+            var wins = Get("Wins");
+            var losses = Get("Losses");
+            var pushes = Get("Pushes");
+
+            // Pushes excluded: a hand nobody won is not a hand you lost, and counting
+            // it against the rate makes a cautious player look worse than they are.
+            var decided = wins + losses;
+            var rate = decided > 0 ? (100.0 * wins / decided) : 0.0;
+
+            var text = new StringBuilder();
+            text.AppendLine($"<color=#a9b8a4>rounds</color>  {rounds:N0}          <color=#a9b8a4>hands</color>  {hands:N0}");
+            text.AppendLine($"<color=#a9b8a4>won</color>  {wins:N0}   <color=#a9b8a4>lost</color>  {losses:N0}   <color=#a9b8a4>pushed</color>  {pushes:N0}   <color=#a9b8a4>({rate:F0}% of those decided)</color>");
+            text.AppendLine($"<color=#a9b8a4>blackjacks</color>  {Get("Blackjacks"):N0}      <color=#a9b8a4>busts</color>  {Get("Busts"):N0}");
+            text.AppendLine($"<color=#a9b8a4>streak</color>  {Get("CurrentStreak"):N0}      <color=#a9b8a4>best</color>  {Get("BestStreak"):N0}");
+            text.AppendLine();
+
+            var byCurrency = stats["ByCurrency"] as JObject;
+            if (byCurrency == null || !byCurrency.HasValues)
+            {
+                return text.ToString();
+            }
+
+            foreach (var entry in byCurrency.Properties())
+            {
+                var w = entry.Value["Wagered"]?.ToObject<long>() ?? 0;
+                var r = entry.Value["Returned"]?.ToObject<long>() ?? 0;
+                var net = entry.Value["Net"]?.ToObject<long>() ?? (r - w);
+
+                var colour = net > 0 ? "#8cd173" : (net < 0 ? "#eb6b5c" : "#a9b8a4");
+                var sign = net > 0 ? "+" : "";
+
+                text.AppendLine(
+                    $"<color=#a9b8a4>{Short(entry.Name),-6}</color> staked {w,14:N0}   back {r,14:N0}   " +
+                    $"<color={colour}>{sign}{net:N0}</color>");
+            }
+
+            return text.ToString();
+        }
+
         private static void BuildHeader(RectTransform parent)
         {
             var bar = NewBox("Header", parent, new Color(0f, 0f, 0f, 0f), 0, default, 0);
@@ -800,8 +954,12 @@ namespace Blackjack.Client
             _actionRow = NewRow("Actions", stack, 14f);
             SetSize(_actionRow, 1340f, 48f);
 
-            _leave = Chip(stack, "LEAVE TABLE", 220f, Close);
-            SetSize((RectTransform)_leave.transform, 220f, 44f);
+            var footer = NewRow("Footer", stack, 14f);
+            SetSize(footer, 1340f, 44f);
+
+            Chip(footer, "RECORD", 180f, ToggleStats);
+
+            _leave = Chip(footer, "LEAVE TABLE", 220f, Close);
         }
 
         private static void BuildBetting(RectTransform parent)
