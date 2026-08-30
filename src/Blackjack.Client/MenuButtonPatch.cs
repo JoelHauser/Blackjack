@@ -175,6 +175,26 @@ namespace Blackjack.Client
 
             foreach (var icon in icons)
             {
+                var rect = icon.rectTransform;
+
+                // Whatever the borrowed icon was, it may have been rotated or mirrored
+                // to suit its own artwork, and a spade inherits that and comes out
+                // upside down. Reported as well as reset, because a rotation here is
+                // worth knowing about rather than silently undoing.
+                if (rect.localRotation != Quaternion.identity ||
+                    rect.localScale.x < 0f || rect.localScale.y < 0f)
+                {
+                    BlackjackClientPlugin.Log.LogInfo(
+                        $"[Blackjack] icon '{icon.name}' had rotation {rect.localEulerAngles} " +
+                        $"scale {rect.localScale}; normalising.");
+                }
+
+                rect.localRotation = Quaternion.identity;
+                rect.localScale = new Vector3(
+                    Mathf.Abs(rect.localScale.x),
+                    Mathf.Abs(rect.localScale.y),
+                    Mathf.Abs(rect.localScale.z));
+
                 icon.sprite = spade;
                 icon.preserveAspect = true;
             }
@@ -236,80 +256,90 @@ namespace Blackjack.Client
             mine.sizeDelta = theirs.sizeDelta;
             mine.localScale = theirs.localScale;
 
-            // One row below the *lowest* button, not below the template.
+            // One row below the lowest button, measured in world space.
             //
-            // Measuring from the hideout button put ours a row under that one, and a
-            // menu mod then moved the exit button somewhere this could not see -- so
-            // the two ended up closer together than any other pair on the menu. The
-            // bottom of the column is the only place a new entry can go without
-            // guessing, and the gap is measured from the buttons that are already
-            // there rather than picked.
-            var lowest = LowestButton(ours, template);
-            var anchor = lowest != null ? lowest : theirs;
+            // Local positions cannot be compared here. The exit entry is a group with
+            // the button nested inside it, so its anchoredPosition is relative to that
+            // group rather than to the menu, and reading them as if they shared a
+            // parent put BLACKJACK straight on top of EXIT. World positions are the
+            // only ones that mean the same thing for every button.
+            var rows = WorldRows(template, ours);
+            if (rows.Count == 0)
+            {
+                mine.anchoredPosition = theirs.anchoredPosition;
+                return;
+            }
 
-            mine.anchoredPosition = anchor.anchoredPosition + new Vector2(0f, -RowGap(template));
+            var gap = MedianGap(rows, theirs);
+            var lowest = rows[rows.Count - 1];
+
+            mine.position = new Vector3(theirs.position.x, lowest - gap, theirs.position.z);
             ours.transform.SetAsLastSibling();
         }
 
-        /// <summary>The button sitting lowest on the menu, ours excluded.</summary>
-        private static RectTransform LowestButton(DefaultUIButton ours, DefaultUIButton template)
+        /// <summary>
+        /// The world Y of every visible menu button, ours excluded, highest first.
+        ///
+        /// Rows closer together than a few pixels are treated as one, since a button
+        /// and a label of its own can sit at almost the same height without being two
+        /// entries.
+        /// </summary>
+        private static List<float> WorldRows(DefaultUIButton template, DefaultUIButton ours)
         {
             var parent = template.transform.parent;
             if (parent == null)
             {
-                return null;
+                return new List<float>();
             }
 
-            return parent.GetComponentsInChildren<DefaultUIButton>(true)
-                .Where(b => b != null && b.name != ButtonName && b != ours)
+            var ys = parent.GetComponentsInChildren<DefaultUIButton>(true)
+                .Where(b => b != null && b.name != ButtonName && b != ours && b.gameObject.activeInHierarchy)
                 .Select(b => b.GetComponent<RectTransform>())
-                .Where(r => r != null && r.gameObject.activeInHierarchy)
-                .OrderBy(r => r.anchoredPosition.y)
-                .FirstOrDefault();
+                .Where(r => r != null)
+                .Select(r => r.position.y)
+                .OrderByDescending(y => y)
+                .ToList();
+
+            var rows = new List<float>();
+            foreach (var y in ys)
+            {
+                if (rows.Count == 0 || Mathf.Abs(rows[rows.Count - 1] - y) > 4f)
+                {
+                    rows.Add(y);
+                }
+            }
+
+            return rows;
         }
 
         /// <summary>
-        /// The spacing between adjacent menu buttons, measured rather than assumed.
-        ///
-        /// The most common gap, not the first one found. Taking the first meant one
-        /// odd pair -- an exit button that is a group rather than a plain button, say
-        /// -- decided the spacing for everything.
+        /// The spacing between adjacent rows: the median of the real gaps, not the
+        /// first one found. The first is whichever odd pair comes back first, and this
+        /// menu has an exit entry that is a group rather than a plain button.
         /// </summary>
-        private static float RowGap(DefaultUIButton template)
+        private static float MedianGap(List<float> rows, RectTransform template)
         {
-            var parent = template.transform.parent;
-            var rect = template.GetComponent<RectTransform>();
-            var fallback = rect != null ? Mathf.Abs(rect.sizeDelta.y) : 46f;
-
-            if (parent != null)
+            var gaps = new List<float>();
+            for (var i = 1; i < rows.Count; i++)
             {
-                var rows = parent.GetComponentsInChildren<DefaultUIButton>(true)
-                    .Where(b => b != null && b.name != ButtonName)
-                    .Select(b => b.GetComponent<RectTransform>())
-                    .Where(r => r != null && r.gameObject.activeInHierarchy)
-                    .Select(r => r.anchoredPosition.y)
-                    .Distinct()
-                    .OrderByDescending(y => y)
-                    .ToList();
-
-                var gaps = new List<float>();
-                for (var i = 1; i < rows.Count; i++)
+                var gap = Mathf.Abs(rows[i - 1] - rows[i]);
+                if (gap > 1f)
                 {
-                    var gap = Mathf.Abs(rows[i - 1] - rows[i]);
-                    if (gap > 1f)
-                    {
-                        gaps.Add(gap);
-                    }
-                }
-
-                if (gaps.Count > 0)
-                {
-                    gaps.Sort();
-                    return gaps[gaps.Count / 2];
+                    gaps.Add(gap);
                 }
             }
 
-            return fallback > 1f ? fallback : 46f;
+            if (gaps.Count > 0)
+            {
+                gaps.Sort();
+                return gaps[gaps.Count / 2];
+            }
+
+            // Nothing to measure: fall back to the template's own height in world units.
+            var corners = new Vector3[4];
+            template.GetWorldCorners(corners);
+            var height = Mathf.Abs(corners[1].y - corners[0].y);
+            return height > 1f ? height : 46f;
         }
 
         private static DefaultUIButton FindOurs(MenuScreen screen) =>
