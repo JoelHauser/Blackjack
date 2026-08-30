@@ -231,8 +231,8 @@ namespace Blackjack.Client
 
         private static void OnClicked()
         {
-            // Milestone one: prove the hook. The panel comes next.
             BlackjackClientPlugin.Log.LogInfo("[Blackjack] menu button clicked");
+            BlackjackPanel.Toggle();
         }
     }
 }

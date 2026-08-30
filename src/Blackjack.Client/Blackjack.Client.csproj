@@ -87,6 +87,10 @@
       <HintPath>$(GameManaged)\Sirenix.Serialization.Config.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(GameManaged)\Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="spt-common">
       <HintPath>$(SptPlugins)\spt-common.dll</HintPath>
       <Private>false</Private>
