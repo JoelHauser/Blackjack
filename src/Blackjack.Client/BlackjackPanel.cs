@@ -94,6 +94,15 @@ namespace Blackjack.Client
                 }
 
                 _root.SetActive(true);
+
+                // A canvas built this frame has not had a layout pass yet, so its
+                // controls have no real size or position until one happens. Anything
+                // that forced a rebuild -- pressing the one button that was where the
+                // raycast expected it -- appeared to "wake up" the rest. Doing it here
+                // means the table is live the moment it opens.
+                Canvas.ForceUpdateCanvases();
+                LayoutRebuilder.ForceRebuildLayoutImmediate((RectTransform)_root.transform);
+
                 RefreshBalances();
 
                 // Resume rather than assume: a hand can still be live from an earlier
@@ -512,6 +521,8 @@ namespace Blackjack.Client
             BuildBottom(column);
             BuildConfirm(canvasObject.transform);
 
+            EnsureEventSystem();
+
             BlackjackClientPlugin.Log.LogInfo("[Blackjack] table built");
         }
 
@@ -849,6 +860,27 @@ namespace Blackjack.Client
             {
                 UnityEngine.Object.Destroy(parent.GetChild(i).gameObject);
             }
+        }
+
+        /// <summary>
+        /// Nothing on a canvas is clickable without an EventSystem in the scene. EFT
+        /// has one, so this almost never fires -- but a table nobody can press is a
+        /// silent, baffling failure, and the check costs nothing.
+        /// </summary>
+        private static void EnsureEventSystem()
+        {
+            if (UnityEngine.EventSystems.EventSystem.current != null)
+            {
+                return;
+            }
+
+            BlackjackClientPlugin.Log.LogWarning("[Blackjack] no EventSystem in the scene; adding one.");
+
+            var go = new GameObject("BlackjackEventSystem",
+                typeof(UnityEngine.EventSystems.EventSystem),
+                typeof(UnityEngine.EventSystems.StandaloneInputModule));
+
+            UnityEngine.Object.DontDestroyOnLoad(go);
         }
 
         private static TMP_FontAsset BorrowFont()

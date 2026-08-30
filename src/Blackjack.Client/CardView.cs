@@ -1,4 +1,4 @@
-using TMPro;
+﻿using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -102,27 +102,30 @@ namespace Blackjack.Client
             holder.transform.SetParent(card, false);
 
             var rect = (RectTransform)holder.transform;
-            rect.sizeDelta = new Vector2(28f, 46f);
+            rect.sizeDelta = new Vector2(30f, 56f);
             rect.anchorMin = rect.anchorMax = flipped ? new Vector2(1f, 0f) : new Vector2(0f, 1f);
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = flipped ? new Vector2(-22f, 30f) : new Vector2(22f, -30f);
+            rect.anchoredPosition = flipped ? new Vector2(-21f, 33f) : new Vector2(21f, -33f);
             rect.localRotation = Quaternion.Euler(0f, 0f, flipped ? 180f : 0f);
 
+            // Rank in the upper half, pip pinned to the bottom, with a clear gap
+            // between. Sharing one block with no gap had the two touching, which on a
+            // real card they never do.
             var label = Text(rect, rank, font, 23f, colour);
-            label.rectTransform.anchorMin = new Vector2(0f, 0.42f);
-            label.rectTransform.anchorMax = Vector2.one;
-            label.rectTransform.offsetMin = Vector2.zero;
-            label.rectTransform.offsetMax = Vector2.zero;
+            var labelRect = label.rectTransform;
+            labelRect.anchorMin = new Vector2(0f, 0.46f);
+            labelRect.anchorMax = Vector2.one;
+            labelRect.offsetMin = Vector2.zero;
+            labelRect.offsetMax = Vector2.zero;
 
             var pip = NewImage("Pip", rect, Color.white);
             pip.sprite = Textures.Suit(suit, colour);
             pip.preserveAspect = true;
             var pipRect = (RectTransform)pip.transform;
-            pipRect.anchorMin = new Vector2(0.5f, 0f);
-            pipRect.anchorMax = new Vector2(0.5f, 0.42f);
-            pipRect.pivot = new Vector2(0.5f, 0.5f);
-            pipRect.sizeDelta = new Vector2(16f, 16f);
-            pipRect.anchoredPosition = new Vector2(0f, 9f);
+            pipRect.anchorMin = pipRect.anchorMax = new Vector2(0.5f, 0f);
+            pipRect.pivot = new Vector2(0.5f, 0f);
+            pipRect.sizeDelta = new Vector2(15f, 15f);
+            pipRect.anchoredPosition = new Vector2(0f, 1f);
         }
 
         private static Image NewImage(string name, Transform parent, Color colour)
