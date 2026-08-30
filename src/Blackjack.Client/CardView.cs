@@ -1,4 +1,5 @@
-﻿using TMPro;
+using System.IO;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -8,12 +9,15 @@ namespace Blackjack.Client
     /// Draws one playing card.
     ///
     /// The server sends cards as two characters, rank then suit: "TD" is the ten of
-    /// diamonds, "AS" the ace of spades. There is no card art to load, so a card is
-    /// drawn: a rounded ivory face, the rank in opposite corners the way a real card
-    /// carries it, and the suit through the middle.
+    /// diamonds, "AS" the ace of spades. If the matching image is installed beside
+    /// the plugin it is used; the card files are named for those same two characters,
+    /// so the lookup is a string format rather than a table.
     ///
-    /// Suits are shapes, not letters. EFT's UI font has no card suits in it, so
-    /// spelling them put a giant C in the middle of every club.
+    /// Without the images it falls back to drawing the card: rounded ivory face, the
+    /// rank in opposite corners the way a real card carries it, and the suit through
+    /// the middle. That path is worth keeping. It is what runs if someone deletes the
+    /// art, and it is the only thing that draws a court card's rank at all -- a drawn
+    /// king is a K and a crown-less pip, where the real image has a portrait on it.
     /// </summary>
     internal static class CardView
     {
@@ -25,10 +29,13 @@ namespace Blackjack.Client
         private static readonly Color Red = new Color(0.70f, 0.11f, 0.12f, 1f);
         private static readonly Color Black = new Color(0.10f, 0.10f, 0.11f, 1f);
 
-        // The back of a card, for the dealer's hole card while the hand is live.
+        // The back of a card, for the dealer's hole card while the hand is live. Drawn
+        // rather than loaded: the card set has no back in it.
         private static readonly Color BackFace = new Color(0.42f, 0.10f, 0.12f, 1f);
         private static readonly Color BackEdge = new Color(0.90f, 0.88f, 0.84f, 1f);
         private static readonly Color BackPattern = new Color(0.30f, 0.07f, 0.09f, 1f);
+
+        private static string _cardDirectory;
 
         internal static GameObject Build(Transform parent, string code, TMP_FontAsset font)
         {
@@ -43,7 +50,6 @@ namespace Blackjack.Client
             rect.sizeDelta = new Vector2(Width, Height);
 
             var image = go.GetComponent<Image>();
-            image.type = Image.Type.Sliced;
 
             // A drop shadow, so cards sit on the cloth rather than being printed on it.
             var shadow = go.AddComponent<Shadow>();
@@ -52,20 +58,54 @@ namespace Blackjack.Client
 
             if (faceDown)
             {
-                image.sprite = Textures.RoundedBox(10, BackFace, BackEdge, 3);
-
-                var inner = NewImage("Pattern", rect, Color.white);
-                inner.sprite = Textures.RoundedBox(8, BackPattern, BackPattern);
-                inner.type = Image.Type.Sliced;
-
-                var innerRect = (RectTransform)inner.transform;
-                innerRect.anchorMin = Vector2.zero;
-                innerRect.anchorMax = Vector2.one;
-                innerRect.offsetMin = new Vector2(10f, 10f);
-                innerRect.offsetMax = new Vector2(-10f, -10f);
+                BuildBack(rect, image);
                 return go;
             }
 
+            var photo = Textures.FromFile(PathFor(code));
+            if (photo != null)
+            {
+                image.sprite = photo;
+                image.type = Image.Type.Simple;
+                return go;
+            }
+
+            BuildDrawn(rect, image, code, font);
+            return go;
+        }
+
+        private static string PathFor(string code)
+        {
+            if (_cardDirectory == null)
+            {
+                var beside = Path.GetDirectoryName(BlackjackClientPlugin.Instance?.Info?.Location ?? ".") ?? ".";
+                _cardDirectory = Path.Combine(beside, "cards");
+            }
+
+            // Upper case, because the server's codes are and a file system that cares
+            // would otherwise find nothing on one machine and everything on another.
+            return Path.Combine(_cardDirectory, code.ToUpperInvariant() + ".png");
+        }
+
+        private static void BuildBack(RectTransform rect, Image image)
+        {
+            image.type = Image.Type.Sliced;
+            image.sprite = Textures.RoundedBox(10, BackFace, BackEdge, 3);
+
+            var inner = NewImage("Pattern", rect, Color.white);
+            inner.sprite = Textures.RoundedBox(8, BackPattern, BackPattern);
+            inner.type = Image.Type.Sliced;
+
+            var innerRect = (RectTransform)inner.transform;
+            innerRect.anchorMin = Vector2.zero;
+            innerRect.anchorMax = Vector2.one;
+            innerRect.offsetMin = new Vector2(10f, 10f);
+            innerRect.offsetMax = new Vector2(-10f, -10f);
+        }
+
+        private static void BuildDrawn(RectTransform rect, Image image, string code, TMP_FontAsset font)
+        {
+            image.type = Image.Type.Sliced;
             image.sprite = Textures.RoundedBox(10, Face, Edge, 2);
 
             var rank = RankOf(code);
@@ -75,7 +115,6 @@ namespace Blackjack.Client
             Corner(rect, rank, suit, font, colour, false);
             Corner(rect, rank, suit, font, colour, true);
 
-            // The pip through the middle.
             var pip = NewImage("Pip", rect, Color.white);
             pip.sprite = Textures.Suit(suit, colour);
             pip.preserveAspect = true;
@@ -84,28 +123,25 @@ namespace Blackjack.Client
             pipRect.pivot = new Vector2(0.5f, 0.5f);
             pipRect.sizeDelta = new Vector2(46f, 46f);
             pipRect.anchoredPosition = Vector2.zero;
-
-            return go;
         }
 
         /// <summary>
         /// Rank over suit in a corner, the second copy rotated a half turn.
         ///
-        /// The pivot is the middle of the corner block, not the corner of the card.
-        /// Rotating about a pivot sitting on the card's edge swings the whole block
-        /// outside it, which is what put a stray red D on the cloth below the dealer's
-        /// hand.
+        /// Geometry worth spelling out, because guessing at it collided twice. The card
+        /// is 96 by 138 with its origin in the middle, so the top edge is at +69. This
+        /// block is 38 tall centred 25 below that edge, which puts its lower edge at
+        /// +25 -- clear of the centre pip, which is 46 across and so reaches only +23.
+        ///
+        /// The pivot is the middle of the block, not the corner of the card. Rotating
+        /// about a pivot sitting on the card's edge swings the whole block outside it,
+        /// which is what put a stray red D on the cloth below the dealer's hand.
         /// </summary>
         private static void Corner(RectTransform card, string rank, char suit, TMP_FontAsset font, Color colour, bool flipped)
         {
             var holder = new GameObject(flipped ? "CornerFlipped" : "Corner", typeof(RectTransform));
             holder.transform.SetParent(card, false);
 
-            // Geometry worth spelling out, because guessing at it collided twice.
-            // The card is 96 by 138 with its origin in the middle, so the top edge is
-            // at +69. This block is 38 tall centred 25 below that edge, which puts its
-            // lower edge at +25 -- clear of the centre pip, which is 46 across and so
-            // reaches only +23. The index and the pip cannot touch at any rank.
             var rect = (RectTransform)holder.transform;
             rect.sizeDelta = new Vector2(24f, 38f);
             rect.anchorMin = rect.anchorMax = flipped ? new Vector2(1f, 0f) : new Vector2(0f, 1f);
@@ -113,7 +149,6 @@ namespace Blackjack.Client
             rect.anchoredPosition = flipped ? new Vector2(-18f, 25f) : new Vector2(18f, -25f);
             rect.localRotation = Quaternion.Euler(0f, 0f, flipped ? 180f : 0f);
 
-            // Rank above, pip below, with a gap. On a real card these never touch.
             var label = Text(rect, rank, font, 21f, colour);
             var labelRect = label.rectTransform;
             labelRect.anchorMin = new Vector2(0f, 0.44f);

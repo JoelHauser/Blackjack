@@ -110,13 +110,15 @@
     cannot touch a running game.
   -->
   <ItemGroup>
-    <TableArt Include="assets	able.png" />
+    <TableArt Include="assets\table.png" />
+    <CardArt Include="assets\cards\*.png" />
   </ItemGroup>
 
   <Target Name="DeployToSPT" AfterTargets="Build" Condition="'$(DeployToSPT)' == 'true'">
     <MakeDir Directories="$(SPTPath)\BepInEx\plugins\Blackjack" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(SPTPath)\BepInEx\plugins\Blackjack" />
     <Copy SourceFiles="@(TableArt)" DestinationFolder="$(SPTPath)\BepInEx\plugins\Blackjack" />
+    <Copy SourceFiles="@(CardArt)" DestinationFolder="$(SPTPath)\BepInEx\plugins\Blackjack\cards" />
     <Message Importance="high" Text="Deployed $(TargetFileName) to $(SPTPath)\BepInEx\plugins\Blackjack" />
   </Target>
 

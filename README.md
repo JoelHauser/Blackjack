@@ -332,6 +332,31 @@ before and after every move against what it intended, so a silent failure inside
 `InventoryHelper` -- a full stash, for instance, which can decline an item without
 throwing -- gets caught rather than quietly shorting the player.
 
+## Art and credits
+
+### Playing cards
+
+The card faces are the **Vectorized Playing Cards 1.3** set by *Chris Aguilar*,
+from [opengameart.org](https://opengameart.org/content/playing-cards-vector-png).
+
+They ship as PNGs in `BepInEx/plugins/Blackjack/cards/`, one per card, named for
+the two-character code the server sends -- `AS.png` is the ace of spades, `TD.png`
+the ten of diamonds. Renaming them from `ace_of_spades.png` is the only change
+made to the set; the images themselves are untouched.
+
+Check the licence in that set before redistributing this mod with the cards
+included. Anyone can delete the folder and the mod draws its own cards instead,
+so the art is not required for it to work.
+
+### Everything else
+
+The table is a photograph, shipped as `table.png` beside the plugin. Delete it
+and a drawn table takes its place.
+
+The suits, card backs, rounded panels and the menu button's diamond are all
+generated in code at load, from the shapes in `Textures.cs`. Nothing else is
+shipped and nothing is loaded from an asset bundle.
+
 ## SPT version sensitivity
 
 Targets **SPT 4.1.3**. The `SPTarkov.*` NuGet packages lag the game: 4.1.2 is the
