@@ -641,6 +641,12 @@ namespace Blackjack.Client
             flow.childControlHeight = false;
 
             BuildDealer(column);
+
+            // Air between the dealer's total and the player's cards. Without it the
+            // two blocks read as one: the dealer's number sits directly on top of the
+            // player's hand, and it is not obvious which side it belongs to.
+            SetSize(NewBox("Gap", column, new Color(0f, 0f, 0f, 0f), 0, default, 0), 10f, 26f);
+
             BuildHands(column);
 
             // Under the table, on the dark, where there is room for a full-width bar.
