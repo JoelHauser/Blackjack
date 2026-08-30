@@ -815,8 +815,11 @@ namespace Blackjack.Client
 
             SetSize(NewBox("Rule", card, new Color(1f, 1f, 1f, 0.10f), 0, default, 0), 820f, 2f);
 
+            // Tall enough for every wallet at once. Six currencies plus the header
+            // come to 217, and the sheet has room for 264 -- the first version gave it
+            // 150, which was fine until somebody played more than three of them.
             _statsRows = NewBox("Rows", card, new Color(0f, 0f, 0f, 0f), 0, default, 0);
-            SetSize(_statsRows, 860f, 150f);
+            SetSize(_statsRows, 860f, 240f);
 
             var rows = _statsRows.gameObject.AddComponent<VerticalLayoutGroup>();
             rows.childAlignment = TextAnchor.UpperCenter;
